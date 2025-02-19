@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 import { getAuth, signOut } from 'firebase/auth'
 import { useEffect } from 'react'
@@ -9,6 +10,7 @@ import DeviceTracking from './components/DeviceTracking'
 import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
 import Login from './components/Login'
+import './App.css'
 
 function App() {
   const handleLogout = async () => {
@@ -23,24 +25,18 @@ function App() {
 
   return (
     <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/logout" element={<Navigate to="/" />} />
-        <Route
-          path="/dashboard/*"
-          element={
-            <PrivateLayout>
-              <Routes>
-                <Route path="" element={<Dashboard />} />
-                <Route path="/messages" element={<Messages />} />
-                <Route path="/contacts" element={<Contacts />} />
-                <Route path="/tracking" element={<DeviceTracking />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-            </PrivateLayout>
-          }
-        />
-      </Routes>
+      <div className="flex h-screen bg-gray-100">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto ml-64">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/contacts" element={<Contacts />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/tracking" element={<DeviceTracking />} />
+          </Routes>
+        </main>
+      </div>
     </Router>
   )
 }
