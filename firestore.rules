@@ -9,16 +9,97 @@ service cloud.firestore {
     
     // School collection
     match /schools/{schoolId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      // Allow reading and updating school document
+      allow update: if request.auth != null 
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'address', 'principalName', 'email', 'phone']);
+      allow create, delete: if false; // Protect from creation/deletion
       
       // Contacts subcollection
       match /contacts/{contactId} {
-        allow read, write: if request.auth != null;
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null 
+          && request.resource.data.keys().hasAll([
+            'student_name', 
+            'grade', 
+            'device_id', 
+            'mother_name',
+            'mother_contact',
+            'father_name',
+            'father_contact',
+            'primary_contact',
+            'created_at'
+          ]);
+        allow delete: if request.auth != null;
+      }
+
+      // Devices subcollection
+      match /devices/{deviceId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasAll([
+            'id',
+            'student_name',
+            'grade',
+            'status',
+            'last_seen',
+            'last_location',
+            'battery_level',
+            'assigned_at'
+          ]);
+        allow delete: if request.auth != null;
+        // Allow updates with specific field changes
+        allow update: if request.auth != null
+          && (
+            request.resource.data.keys().hasAll([
+              'id',
+              'student_name',
+              'grade',
+              'status',
+              'last_seen',
+              'last_location',
+              'battery_level',
+              'assigned_at'
+            ]) ||
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['settings', 'status', 'battery_level', 'last_seen', 'last_location'])
+          );
+
+        // Device locations subcollection
+        match /locations/{locationId} {
+          allow read: if request.auth != null;
+          allow create: if request.auth != null
+            && request.resource.data.keys().hasAll([
+              'latitude',
+              'longitude',
+              'address',
+              'timestamp',
+              'accuracy',
+              'battery_level',
+              'signal_strength',
+              'event_type'
+            ]);
+          // Don't allow updates or deletes to maintain location history integrity
+          allow update, delete: if false;
+        }
       }
 
       // Messages subcollection
       match /messages/{messageId} {
-        allow read, write: if request.auth != null;
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasAll([
+            'message',
+            'recipients',
+            'sentAt',
+            'status',
+            'selectedGrade',
+            'selectedContact',
+            'totalRecipients'
+          ]);
+        allow update: if request.auth != null;
+        allow delete: if false; // Prevent message deletion for audit trail
       }
     }
   }
