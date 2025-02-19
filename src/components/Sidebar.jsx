@@ -12,7 +12,7 @@ function Sidebar() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      navigate('/login');
+      navigate('/');
     } catch (error) {
       console.error('Error logging out:', error);
     }
@@ -21,14 +21,14 @@ function Sidebar() {
   return (
     <div className="w-64 bg-white border-r min-h-screen p-6">
       <div className="flex flex-col h-full">
-        <h1 className="text-xl font-bold mb-8">TabletTracker</h1>
+        <h1 className="text-xl font-bold mb-8">SchoolConnect</h1>
         
         <nav className="space-y-2 flex-1">
           <Link 
-            to="/"
+            to="/dashboard"
             className={cn(
               "flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors",
-              location.pathname === "/" && "bg-blue-50 text-blue-600"
+              location.pathname === "/dashboard" && "bg-blue-50 text-blue-600"
             )}
           >
             <span className="text-sm">Dashboard</span>

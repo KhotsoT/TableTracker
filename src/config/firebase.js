@@ -2,6 +2,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
+export const SCHOOL_ID = import.meta.env.VITE_SCHOOL_ID;
+export const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME;
+
 const firebaseConfig = {
   // Replace with your Firebase config
   apiKey: "AIzaSyC4nFhQleHwNcKCFOp3pxwnh7yF_48mtsg",

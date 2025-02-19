@@ -9,7 +9,6 @@ import DeviceTracking from './components/DeviceTracking'
 import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
 import Login from './components/Login'
-import LandingPage from './components/LandingPage'
 
 function App() {
   const handleLogout = async () => {
@@ -25,8 +24,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Login />} />
         <Route path="/logout" element={<Navigate to="/" />} />
         <Route
           path="/dashboard/*"
