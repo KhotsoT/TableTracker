@@ -242,13 +242,43 @@ function Messages() {
 
   const sendZoomConnectSMS = async (recipients, messageText) => {
     try {
-      // Format all recipients for bulk sending
-      const messages = recipients.map(recipient => ({
-        recipientNumber: recipient.number.replace(/^\+27/, '0'),
-        content: messageText
-      }));
+      // Format all recipients for sending
+      const messages = recipients.map(recipient => {
+        // Clean and format the phone number
+        let number = recipient.number.replace(/\s+/g, ''); // Remove spaces
+        
+        // If number starts with '27', replace with '0'
+        if (number.startsWith('27')) {
+          number = '0' + number.slice(2);
+        }
+        
+        // If number starts with '+27', replace with '0'
+        if (number.startsWith('+27')) {
+          number = '0' + number.slice(3);
+        }
+        
+        // Ensure number starts with '0'
+        if (!number.startsWith('0')) {
+          number = '0' + number;
+        }
+        
+        // Convert to international format (27)
+        if (number.startsWith('0')) {
+          number = '27' + number.slice(1);
+        }
+        
+        // Validate the final number format
+        if (!/^27\d{9}$/.test(number)) {
+          throw new Error(`Invalid phone number format for ${recipient.name}: ${number}`);
+        }
 
-      console.log('Sending bulk messages to:', messages.length, 'recipients');
+        return {
+          recipientNumber: number,
+          message: messageText  // Changed to 'message' instead of 'content'
+        };
+      });
+
+      console.log('Sending messages to:', messages.length, 'recipients');
       
       const response = await fetch('http://localhost:3000/api/send-sms', {
         method: 'POST',
@@ -265,13 +295,7 @@ function Messages() {
         throw new Error(data.error || 'Failed to send SMS');
       }
 
-      return {
-        success: true,
-        data: {
-          status: 'delivered',
-          sentCount: messages.length
-        }
-      };
+      return data;
     } catch (error) {
       console.error('Error sending messages:', error);
       throw error;

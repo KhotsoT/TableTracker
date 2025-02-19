@@ -18,28 +18,18 @@ if (missingEnvVars.length > 0) {
 app.post('/api/send-sms', async (req, res) => {
   try {
     const { messages } = req.body;
-    
-    console.log('Sending bulk SMS to', messages.length, 'recipients');
+    console.log('Processing SMS requests for', messages.length, 'recipients');
 
-    // Send messages in batches of 100 (or whatever their API limit is)
-    const BATCH_SIZE = 100;
     const results = [];
-
-    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-      const batch = messages.slice(i, i + BATCH_SIZE);
-      
+    
+    // Send messages one at a time as per API example
+    for (const msg of messages) {
       const requestBody = {
-        messages: batch.map(msg => ({
-          recipientNumber: msg.recipientNumber,
-          message: msg.content
-        })),
-        senderId: "School"
+        recipientNumber: msg.recipientNumber,
+        message: msg.message
       };
 
-      console.log(`Sending batch ${i/BATCH_SIZE + 1}:`, {
-        batchSize: batch.length,
-        totalBatches: Math.ceil(messages.length/BATCH_SIZE)
-      });
+      console.log('Sending SMS to:', requestBody.recipientNumber);
 
       const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/send', {
         method: 'POST',
@@ -52,32 +42,38 @@ app.post('/api/send-sms', async (req, res) => {
         body: JSON.stringify(requestBody)
       });
 
-      const result = await response.text();
-      console.log('Batch response:', {
+      const responseText = await response.text();
+      console.log('API Response:', {
         status: response.status,
-        body: result
+        body: responseText
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to send batch: ${response.status} - ${result}`);
+        throw new Error(`Failed to send SMS: ${response.status} - ${responseText}`);
       }
 
-      results.push(result);
+      try {
+        const result = JSON.parse(responseText);
+        results.push(result);
+      } catch (e) {
+        console.log('Non-JSON response:', responseText);
+        results.push({ status: 'sent', raw: responseText });
+      }
     }
 
     res.json({
       success: true,
       data: {
-        batchResults: results,
+        results,
         totalSent: messages.length
       }
     });
 
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    console.error('Error sending SMS:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
     });
   }
 });
