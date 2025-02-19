@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { Upload, Download, FileSpreadsheet, Trash2, AlertCircle } from 'lucide-react'
-import { db } from '../config/firebase'
+import { db, SCHOOL_ID } from '../config/firebase'
 import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc } from 'firebase/firestore'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
@@ -21,8 +21,6 @@ function Contacts() {
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, contactId: null })
-
-  const SCHOOL_ID = 'st-marys' // This should match your school's ID in Firestore
 
   // Fetch contacts on component mount
   useEffect(() => {
@@ -105,11 +103,11 @@ function Contacts() {
       device_id: 'iPad-001',
       imei_number: '123456789012345',
       mother_name: 'Mother Name',
-      mother_contact: '0123456789', // Will appear as 123456789 in Excel
+      mother_contact: "'0123456789", // Added quote to preserve leading zero
       father_name: 'Father Name',
-      father_contact: '0123456789', // Will appear as 123456789 in Excel
-      primary_contact: 'mother', // Options: 'mother' or 'father'
-      notes: 'Phone numbers should be 10 digits starting with 0. Excel may remove the leading 0, this will be handled automatically on import.'
+      father_contact: "'0123456789", // Added quote to preserve leading zero
+      primary_contact: 'mother',
+      notes: "Phone numbers should be 10 digits starting with 0. Add ' before the number to preserve leading zero (e.g. '0123456789)"
     }
   ]
 
@@ -145,25 +143,37 @@ function Contacts() {
         const data = new Uint8Array(e.target.result)
         const workbook = XLSX.read(data, { type: 'array' })
         const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-        // Tell XLSX to treat IMEI as text
+        // Tell XLSX to treat IMEI and phone numbers as text
         if (worksheet['!ref']) {
           const range = XLSX.utils.decode_range(worksheet['!ref'])
           for (let R = range.s.r; R <= range.e.r; ++R) {
             const imeiCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 3 })] // Assuming IMEI is 4th column
+            const motherContactCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 5 })] // Mother's contact
+            const fatherContactCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 7 })] // Father's contact
+            
             if (imeiCell) {
               imeiCell.z = '@' // Format as text
-              // Ensure IMEI is treated as string
               imeiCell.v = imeiCell.v.toString()
+            }
+            if (motherContactCell) {
+              motherContactCell.z = '@'
+              motherContactCell.v = motherContactCell.v.toString().padStart(10, '0')
+            }
+            if (fatherContactCell) {
+              fatherContactCell.z = '@'
+              fatherContactCell.v = fatherContactCell.v.toString().padStart(10, '0')
             }
           }
         }
         const contacts = XLSX.utils.sheet_to_json(worksheet)
         
-        // Validate contacts...
+        // Validate and format contacts
         const validatedContacts = contacts.map(contact => ({
           ...contact,
-          // Ensure IMEI is always string and pad with leading zeros if needed
-          imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null
+          // Format IMEI and phone numbers
+          imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null,
+          mother_contact: contact.mother_contact ? contact.mother_contact.toString().padStart(10, '0') : null,
+          father_contact: contact.father_contact ? contact.father_contact.toString().padStart(10, '0') : null
         }))
 
         await saveContactsToFirestore(validatedContacts)
