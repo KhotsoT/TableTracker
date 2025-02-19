@@ -9,7 +9,7 @@ function App() {
         <div className="w-64 border-r border-gray-200">
           <Navigation />
         </div>
-        <div className="flex-1">
+        <div className="flex-1 w-full max-w-none">
           <AppRoutes />
         </div>
       </div>

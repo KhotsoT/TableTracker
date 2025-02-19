@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
-import { FaTablet, FaUserGraduate, FaExclamationTriangle, FaCheckCircle, FaHistory } from 'react-icons/fa'
-import { MdLocationOn } from 'react-icons/md'
+import { useState } from 'react'
+import { Tablet, Users, AlertTriangle, History, MapPin, CheckCircle } from 'lucide-react'
+import { Card } from './ui/card'
 
 function Dashboard() {
-  const [stats, setStats] = useState({
+  const [stats] = useState({
     totalTablets: 247,
     activeTablets: 243,
     totalStudents: 250,
@@ -21,7 +21,8 @@ function Dashboard() {
       id: 1,
       type: 'alert',
       device: 'iPad-2389',
-      student: 'John Smith - Grade 11A',
+      student: 'John Smith',
+      grade: 'Grade 11A',
       message: 'Device left school premises',
       time: '2 minutes ago'
     },
@@ -29,7 +30,8 @@ function Dashboard() {
       id: 2,
       type: 'location',
       device: 'iPad-1578',
-      student: 'Mary Johnson - Grade 10B',
+      student: 'Mary Johnson',
+      grade: 'Grade 10B',
       message: 'Location updated: Library',
       time: '5 minutes ago'
     },
@@ -37,115 +39,87 @@ function Dashboard() {
       id: 3,
       type: 'status',
       device: 'iPad-3642',
-      student: 'David Brown - Grade 12C',
+      student: 'David Brown',
+      grade: 'Grade 12C',
       message: 'Device back online',
       time: '10 minutes ago'
     }
   ])
 
   return (
-    <div className="dashboard-container">
-      <div className="dashboard-header">
-        <div className="school-info">
-          <h1>{schoolInfo.name}</h1>
-          <p className="school-details">
-            {schoolInfo.address} | Principal: {schoolInfo.principalName}
-          </p>
-        </div>
-        <div className="date-time">{new Date().toLocaleDateString()}</div>
+    <div className="p-8 space-y-8">
+      {/* Header */}
+      <div className="space-y-2">
+        <h1 className="text-4xl font-bold text-gray-900">{schoolInfo.name}</h1>
+        <p className="text-gray-500">
+          {schoolInfo.address} | Principal: {schoolInfo.principalName}
+        </p>
+        <p className="text-sm text-gray-400">{new Date().toLocaleDateString()}</p>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon">
-            <FaTablet />
+      {/* Stats Grid */}
+      <div className="grid grid-cols-3 gap-6">
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center space-x-3">
+            <Tablet className="w-6 h-6 text-blue-500" />
+            <h3 className="text-lg font-medium text-gray-700">School Tablets</h3>
           </div>
-          <div className="stat-content">
-            <h3>School Tablets</h3>
-            <p className="stat-number">{stats.totalTablets}</p>
-            <p className="stat-detail">
-              {stats.activeTablets} Active
-            </p>
+          <div>
+            <p className="text-3xl font-bold text-gray-900">{stats.totalTablets}</p>
+            <p className="text-sm text-gray-500">{stats.activeTablets} Active</p>
           </div>
-        </div>
+        </Card>
 
-        <div className="stat-card">
-          <div className="stat-icon">
-            <FaUserGraduate />
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center space-x-3">
+            <Users className="w-6 h-6 text-green-500" />
+            <h3 className="text-lg font-medium text-gray-700">Students</h3>
           </div>
-          <div className="stat-content">
-            <h3>Students</h3>
-            <p className="stat-number">{stats.totalStudents}</p>
-            <p className="stat-detail">
-              Assigned Devices
-            </p>
+          <div>
+            <p className="text-3xl font-bold text-gray-900">{stats.totalStudents}</p>
+            <p className="text-sm text-gray-500">Assigned Devices</p>
           </div>
-        </div>
+        </Card>
 
-        <div className="stat-card">
-          <div className="stat-icon alert">
-            <FaExclamationTriangle />
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center space-x-3">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <h3 className="text-lg font-medium text-gray-700">Active Alerts</h3>
           </div>
-          <div className="stat-content">
-            <h3>Active Alerts</h3>
-            <p className="stat-number">{stats.alerts}</p>
-            <p className="stat-detail">
-              Require Attention
-            </p>
+          <div>
+            <p className="text-3xl font-bold text-gray-900">{stats.alerts}</p>
+            <p className="text-sm text-gray-500">Require Attention</p>
           </div>
-        </div>
+        </Card>
       </div>
 
-      <div className="dashboard-grid">
-        <div className="dashboard-card activity-feed">
-          <div className="card-header">
-            <h2><FaHistory /> Recent Activity</h2>
-          </div>
-          <div className="activity-list">
-            {recentActivity.map(activity => (
-              <div key={activity.id} className={`activity-item ${activity.type}`}>
-                <div className="activity-icon">
-                  {activity.type === 'alert' && <FaExclamationTriangle />}
-                  {activity.type === 'location' && <MdLocationOn />}
-                  {activity.type === 'status' && <FaCheckCircle />}
+      {/* Recent Activity */}
+      <Card className="p-6">
+        <div className="flex items-center space-x-2 mb-6">
+          <History className="w-5 h-5 text-gray-500" />
+          <h2 className="text-xl font-semibold text-gray-900">Recent Activity</h2>
+        </div>
+        <div className="space-y-4">
+          {recentActivity.map((activity) => (
+            <div key={activity.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg">
+              {activity.type === 'alert' && <AlertTriangle className="w-5 h-5 text-red-500 mt-1" />}
+              {activity.type === 'location' && <MapPin className="w-5 h-5 text-blue-500 mt-1" />}
+              {activity.type === 'status' && <CheckCircle className="w-5 h-5 text-green-500 mt-1" />}
+              
+              <div className="flex-1">
+                <div className="flex justify-between">
+                  <p className="font-medium text-gray-900">{activity.device}</p>
+                  <span className="text-sm text-gray-500">{activity.time}</span>
                 </div>
-                <div className="activity-content">
-                  <h4>{activity.device}</h4>
-                  <p>{activity.message}</p>
-                  <div className="activity-meta">
-                    <span className="student">{activity.student}</span>
-                    <span className="time">{activity.time}</span>
-                  </div>
-                </div>
+                <p className="text-gray-600">{activity.message}</p>
+                <p className="text-sm text-gray-500">
+                  {activity.student} - {activity.grade}
+                </p>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-
-        <div className="dashboard-card quick-actions">
-          <div className="card-header">
-            <h2>Quick Actions</h2>
-          </div>
-          <div className="quick-actions-grid">
-            <button className="action-button">
-              <MdLocationOn />
-              Track Device
-            </button>
-            <button className="action-button">
-              <FaTablet />
-              Assign Device
-            </button>
-            <button className="action-button">
-              <FaUserGraduate />
-              Add Student
-            </button>
-            <button className="action-button">
-              <FaExclamationTriangle />
-              View Alerts
-            </button>
-          </div>
-        </div>
-      </div>
+      </Card>
     </div>
   )
 }

@@ -19,7 +19,8 @@ import {
   LogOut,
   RefreshCw,
   Plus,
-  Home
+  Home,
+  AlertCircle
 } from 'lucide-react';
 
 function Messages() {
@@ -225,203 +226,187 @@ function Messages() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Header - Simplified */}
-      <div className="flex justify-end items-center mb-6">
+    <div className="p-8 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <div className="text-sm text-gray-600">
           Credits: <span className="font-medium">386</span>
         </div>
       </div>
 
-      {/* Updated Message Actions */}
-      <div className="flex space-x-4 mb-6">
-        <Button 
+      {/* Tabs */}
+      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg w-fit">
+        <Button
           variant={activeTab === 'new' ? "secondary" : "ghost"}
           onClick={() => setActiveTab('new')}
-          className="flex-1"
+          className="rounded-md px-4"
         >
-          <span className="mr-2">New SMS</span>
+          New SMS
         </Button>
-        <Button 
+        <Button
           variant={activeTab === 'inbox' ? "secondary" : "ghost"}
           onClick={() => setActiveTab('inbox')}
-          className="flex-1"
+          className="rounded-md px-4"
         >
           Inbox
         </Button>
-        <Button 
+        <Button
           variant={activeTab === 'sent' ? "secondary" : "ghost"}
           onClick={() => setActiveTab('sent')}
-          className="flex-1"
+          className="rounded-md px-4"
         >
           Sent
         </Button>
       </div>
 
-      {/* Conditional rendering based on active tab */}
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          {error}
+        </div>
+      )}
+
+      {/* New Message Form */}
       {activeTab === 'new' && (
         <Card className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-lg font-semibold">Compose Message</h2>
-          </div>
-
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Grade</label>
-                  <Select 
-                    value={selectedGrade}
-                    onValueChange={setSelectedGrade}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Grade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {grades.map(grade => (
-                        <SelectItem key={grade} value={grade}>
-                          {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Recipients</label>
-                  <Select 
-                    value={selectedContact}
-                    onValueChange={setSelectedContact}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Recipients" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="primary">Primary Contact Only</SelectItem>
-                      <SelectItem value="both">Both Parents</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-6">Compose Message</h2>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Grade</label>
+                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {grades.map(grade => (
+                      <SelectItem key={grade} value={grade}>
+                        {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Message</label>
-                <Textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Type your message here..."
-                  rows={4}
-                  className="resize-none"
-                />
-                <div className="text-sm text-gray-500 text-right">
-                  {message.length}/160 characters
-                </div>
+                <label className="text-sm font-medium text-gray-700">Recipients</label>
+                <Select value={selectedContact} onValueChange={setSelectedContact}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Recipients" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="primary">Primary Contact Only</SelectItem>
+                    <SelectItem value="both">Both Parents</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
 
-              {previewRecipients.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm flex items-center">
-                      <Users className="mr-2 h-4 w-4" />
-                      Recipients ({previewRecipients.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700">Message</label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message here..."
+                rows={4}
+                className="resize-none"
+              />
+              <div className="text-sm text-gray-500 text-right">
+                {message.length}/160 characters
+              </div>
+            </div>
+
+            {previewRecipients.length > 0 && (
+              <Card className="bg-gray-50/50">
+                <div className="p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
+                    <Users className="w-4 h-4" />
+                    Recipients ({previewRecipients.length})
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
                     {previewRecipients.slice(0, 6).map((recipient, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
-                        <span className="font-medium">{recipient.name}</span>
-                        <span className="text-sm text-gray-500">{recipient.relation}</span>
+                      <div key={index} className="flex items-center justify-between p-2 bg-white rounded-md text-sm">
+                        <span className="font-medium text-gray-900">{recipient.name}</span>
+                        <span className="text-gray-500">{recipient.relation}</span>
                       </div>
                     ))}
                     {previewRecipients.length > 6 && (
-                      <div className="p-2 bg-gray-50 rounded-md text-center text-gray-500">
+                      <div className="p-2 bg-white rounded-md text-center text-gray-500 text-sm">
                         +{previewRecipients.length - 6} more
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                </div>
+              </Card>
+            )}
 
-              <div className="flex space-x-4">
-                <Button 
-                  type="submit"
-                  disabled={isLoading || !message.trim()}
-                  className="w-full"
-                >
-                  {isLoading ? (
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-2 h-4 w-4" />
-                  )}
-                  {isLoading ? 'Sending...' : 'Send Message'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
+            <Button 
+              type="submit"
+              disabled={isLoading || !message.trim()}
+              className="w-full"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {isLoading ? 'Sending...' : 'Send Message'}
+            </Button>
+          </form>
         </Card>
       )}
-      
+
+      {/* Sent Messages */}
+      {activeTab === 'sent' && (
+        <Card className="divide-y divide-gray-100">
+          {sentMessages.map((msg) => (
+            <div key={msg.id} className="p-4 hover:bg-gray-50">
+              <div className="flex justify-between items-start mb-2">
+                <div className="space-y-1">
+                  <p className="text-sm text-gray-900">{msg.message}</p>
+                  <p className="text-xs text-gray-500">
+                    Sent to: {msg.totalRecipients} recipients 
+                    ({msg.selectedGrade === 'all' ? 'All Grades' : `Grade ${msg.selectedGrade}`})
+                  </p>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {formatDate(msg.sentAt)}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-gray-500">
+                <span>Delivered: {msg.deliveredCount}/{msg.totalRecipients}</span>
+                {msg.failedCount > 0 && (
+                  <span className="text-red-500">Failed: {msg.failedCount}</span>
+                )}
+              </div>
+            </div>
+          ))}
+          {sentMessages.length === 0 && (
+            <div className="p-8 text-center">
+              <Send className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">No messages sent yet</p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Inbox Empty State */}
       {activeTab === 'inbox' && (
-        <Card className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Inbox</h2>
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Mail className="w-12 h-12 text-gray-300 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-1">No Messages</h3>
+        <Card className="divide-y divide-gray-100">
+          <div className="p-8 text-center">
+            <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+            <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
             <p className="text-sm text-gray-500">
               Your inbox is currently empty
             </p>
           </div>
         </Card>
       )}
-      
-      {activeTab === 'sent' && (
-        <Card className="p-6">
-          <h2 className="text-lg font-semibold mb-4">Sent Messages</h2>
-          <div className="space-y-4">
-            {sentMessages.length > 0 ? (
-              sentMessages.map((msg) => (
-                <div 
-                  key={msg.id} 
-                  className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="space-y-1">
-                      <p className="font-medium text-sm text-gray-900">{msg.message}</p>
-                      <p className="text-sm text-gray-500">
-                        Sent to: {msg.totalRecipients} recipients 
-                        ({msg.selectedGrade === 'all' ? 'All Grades' : `Grade ${msg.selectedGrade}`})
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      {getStatusIcon(msg.status)}
-                      <span className="text-xs text-gray-500">
-                        {formatDate(msg.sentAt)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2 text-sm text-gray-500">
-                    <span>
-                      Delivered: {msg.deliveredCount}/{msg.totalRecipients}
-                    </span>
-                    {msg.failedCount > 0 && (
-                      <span className="text-red-500">
-                        • Failed: {msg.failedCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Send className="w-12 h-12 text-gray-300 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No Messages Sent</h3>
-                <p className="text-sm text-gray-500">
-                  You haven't sent any messages yet
-                </p>
-              </div>
-            )}
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            Loading...
           </div>
-        </Card>
+        </div>
       )}
     </div>
   );

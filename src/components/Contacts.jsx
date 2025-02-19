@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { FaDownload, FaUpload, FaUserPlus, FaFileExcel, FaInfoCircle } from 'react-icons/fa'
+import { Upload, Download, FileSpreadsheet, Info } from 'lucide-react'
 import { db } from '../config/firebase'
 import { collection, getDocs, addDoc, deleteDoc, query, where } from 'firebase/firestore'
+import { Card } from './ui/card'
+import { Button } from './ui/button'
 
 function Contacts() {
   const [contacts, setContacts] = useState([])
@@ -221,111 +223,148 @@ function Contacts() {
   }
 
   return (
-    <div className="contacts-container">
-      <div className="contacts-header">
-        <h2>Student Device Management</h2>
-        <div className="template-section">
-          <button onClick={downloadTemplate} className="template-button">
-            <FaFileExcel /> Download Template
-          </button>
-        </div>
+    <div className="p-8 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Student Device Management</h1>
+        <Button 
+          variant="outline" 
+          onClick={downloadTemplate}
+          className="flex items-center gap-2"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Download Template
+        </Button>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
-
-      <div className="contacts-actions">
-        <div className="import-section">
-          <label htmlFor="file-upload" className="custom-file-upload">
-            <FaUpload /> Import Students
-          </label>
-          <input
-            id="file-upload"
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleFileUpload}
-            style={{ display: 'none' }}
-          />
+      {error && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg">
+          {error}
         </div>
+      )}
 
-        <button onClick={exportContacts} className="export-button">
-          <FaDownload /> Export Data
-        </button>
-      </div>
+      {/* Actions */}
+      <Card className="p-4">
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label 
+              htmlFor="file-upload" 
+              className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer transition-colors"
+            >
+              <Upload className="w-5 h-5 text-gray-500" />
+              <span className="text-gray-600">Import Students</span>
+              <input
+                id="file-upload"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
+          <Button 
+            variant="outline"
+            onClick={exportContacts}
+            className="flex items-center gap-2"
+            disabled={contacts.length === 0}
+          >
+            <Download className="w-4 h-4" />
+            Export Data
+          </Button>
+        </div>
+      </Card>
 
-      <div className="contacts-list">
-        <table>
-          <thead>
-            <tr>
-              <th>Student Name</th>
-              <th>Grade</th>
-              <th>Device ID</th>
-              <th>IMEI Number</th>
-              <th>Mother's Contact</th>
-              <th>Father's Contact</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contacts.map((contact, index) => (
-              <tr key={index}>
-                <td data-label="Student Name">{contact.student_name}</td>
-                <td data-label="Grade">{contact.grade}</td>
-                <td data-label="Device ID">{contact.device_id}</td>
-                <td data-label="IMEI Number">{contact.imei_number}</td>
-                <td 
-                  data-label="Mother's Contact"
-                  className={`parent-cell ${contact.primary_contact === 'mother' ? 'primary' : ''}`}
-                >
-                  <div className="parent-info">
-                    <span className="parent-name">
-                      {contact.mother_name}
-                      {contact.primary_contact === 'mother' && 
-                        <span className="primary-badge">Primary</span>
-                      }
-                    </span>
-                    <span className="parent-phone">{contact.mother_contact}</span>
-                  </div>
-                  <div className="contact-tooltip">
-                    <FaInfoCircle className="info-icon" />
-                    <div className="tooltip-content">
-                      <p><strong>Name:</strong> {contact.mother_name}</p>
-                      <p><strong>Phone:</strong> {contact.mother_contact}</p>
-                      <p><strong>Student:</strong> {contact.student_name}</p>
-                      <p><strong>Grade:</strong> {contact.grade}</p>
-                      {contact.notes && <p><strong>Notes:</strong> {contact.notes}</p>}
-                    </div>
-                  </div>
-                </td>
-                <td 
-                  data-label="Father's Contact"
-                  className={`parent-cell ${contact.primary_contact === 'father' ? 'primary' : ''}`}
-                >
-                  <div className="parent-info">
-                    <span className="parent-name">
-                      {contact.father_name}
-                      {contact.primary_contact === 'father' && 
-                        <span className="primary-badge">Primary</span>
-                      }
-                    </span>
-                    <span className="parent-phone">{contact.father_contact}</span>
-                  </div>
-                  <div className="contact-tooltip">
-                    <FaInfoCircle className="info-icon" />
-                    <div className="tooltip-content">
-                      <p><strong>Name:</strong> {contact.father_name}</p>
-                      <p><strong>Phone:</strong> {contact.father_contact}</p>
-                      <p><strong>Student:</strong> {contact.student_name}</p>
-                      <p><strong>Grade:</strong> {contact.grade}</p>
-                      {contact.notes && <p><strong>Notes:</strong> {contact.notes}</p>}
-                    </div>
-                  </div>
-                </td>
+      {/* Contacts Table */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Student Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Grade
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Device ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  IMEI Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mother's Contact
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Father's Contact
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {contacts.map((contact, index) => (
+                <tr key={index} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {contact.student_name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {contact.grade}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {contact.device_id}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
+                    {contact.imei_number}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className={`text-sm font-medium ${contact.primary_contact === 'mother' ? 'text-blue-600' : 'text-gray-900'}`}>
+                          {contact.mother_name}
+                          {contact.primary_contact === 'mother' && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              Primary
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm text-gray-500">{contact.mother_contact}</span>
+                      </div>
+                      <button className="text-gray-400 hover:text-gray-600">
+                        <Info className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className={`text-sm font-medium ${contact.primary_contact === 'father' ? 'text-blue-600' : 'text-gray-900'}`}>
+                          {contact.father_name}
+                          {contact.primary_contact === 'father' && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              Primary
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm text-gray-500">{contact.father_contact}</span>
+                      </div>
+                      <button className="text-gray-400 hover:text-gray-600">
+                        <Info className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
-      {isLoading && <div className="loading-spinner">Loading...</div>}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            Loading...
+          </div>
+        </div>
+      )}
     </div>
   )
 }
