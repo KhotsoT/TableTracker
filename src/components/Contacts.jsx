@@ -136,35 +136,43 @@ function Contacts() {
     XLSX.writeFile(workbook, 'student_device_template.xlsx')
   }
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0]
-    setError(null)
-
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      try {
-        const workbook = XLSX.read(event.target.result, { type: 'binary' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const data = XLSX.utils.sheet_to_json(worksheet)
-
-        // Validate the data
-        const isValid = validateImportData(data)
-        if (isValid) {
-          await saveContactsToFirestore(data)
+  const handleFileUpload = async (event) => {
+    try {
+      const file = event.target.files[0]
+      const reader = new FileReader()
+      
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target.result)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        // Tell XLSX to treat IMEI as text
+        if (worksheet['!ref']) {
+          const range = XLSX.utils.decode_range(worksheet['!ref'])
+          for (let R = range.s.r; R <= range.e.r; ++R) {
+            const imeiCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 3 })] // Assuming IMEI is 4th column
+            if (imeiCell) {
+              imeiCell.z = '@' // Format as text
+              // Ensure IMEI is treated as string
+              imeiCell.v = imeiCell.v.toString()
+            }
+          }
         }
-      } catch (error) {
-        setError('Error processing file: ' + error.message)
+        const contacts = XLSX.utils.sheet_to_json(worksheet)
+        
+        // Validate contacts...
+        const validatedContacts = contacts.map(contact => ({
+          ...contact,
+          // Ensure IMEI is always string and pad with leading zeros if needed
+          imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null
+        }))
+
+        await saveContactsToFirestore(validatedContacts)
       }
+      
+      reader.readAsArrayBuffer(file)
+    } catch (error) {
+      setError('Error processing file: ' + error.message)
     }
-
-    reader.onerror = () => {
-      setError('Error reading file')
-    }
-
-    reader.readAsBinaryString(file)
   }
 
   const validateImportData = (data) => {
@@ -241,11 +249,36 @@ function Contacts() {
       return
     }
 
-    // Remove Firestore-specific fields before export
-    const exportData = contacts.map(({ id, createdAt, updatedAt, ...contact }) => contact)
+    // Remove Firestore-specific fields and format IMEI
+    const exportData = contacts.map(({ id, createdAt, updatedAt, ...contact }) => ({
+      ...contact,
+      // Format IMEI as string with leading zeros
+      imei_number: contact.imei_number ? `'${contact.imei_number}` : '' // Adding ' forces Excel to treat it as text
+    }))
 
     const worksheet = XLSX.utils.json_to_sheet(exportData)
     const workbook = XLSX.utils.book_new()
+   
+    // Set column width and format for IMEI column
+    const colWidth = [
+      { wch: 20 }, // Student Name
+      { wch: 10 }, // Grade
+      { wch: 15 }, // Device ID
+      { wch: 20 }, // IMEI
+      { wch: 20 }, // Mother's Contact
+      { wch: 20 }, // Father's Contact
+    ]
+    worksheet['!cols'] = colWidth
+   
+    // Format IMEI column as text
+    const range = XLSX.utils.decode_range(worksheet['!ref'])
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      const imeiCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 3 })]
+      if (imeiCell) {
+        imeiCell.z = '@'
+      }
+    }
+
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts')
     XLSX.writeFile(workbook, 'student_devices.xlsx')
   }
@@ -286,6 +319,23 @@ function Contacts() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const validateContacts = (contacts) => {
+    return contacts.map(contact => {
+      // Validate IMEI format (15 digits)
+      if (contact.imei_number) {
+        const imeiString = contact.imei_number.toString()
+        if (!/^\d{15}$/.test(imeiString.padStart(15, '0'))) {
+          throw new Error(`Invalid IMEI format for student ${contact.student_name}. IMEI must be 15 digits.`)
+        }
+      }
+      
+      return {
+        ...contact,
+        imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null
+      }
+    })
   }
 
   return (
