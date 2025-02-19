@@ -289,7 +289,7 @@ function Messages() {
       </div>
 
       {/* Tabs */}
-      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg mb-6">
+      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg mb-6 w-fit">
         <Button
           variant={activeTab === 'new' ? "secondary" : "ghost"}
           onClick={() => setActiveTab('new')}
@@ -320,136 +320,120 @@ function Messages() {
         </div>
       )}
 
-      {/* New Message Form */}
       {activeTab === 'new' && (
-        <Card className="p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-6">Compose Message</h2>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              {/* Grade and Contact Type Selection */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">Grade</label>
-                  <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                      <SelectValue placeholder="Select Grade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {grades.map(grade => (
-                        <SelectItem 
-                          key={grade} 
-                          value={grade}
-                          className="cursor-pointer hover:bg-[#646cff] hover:text-white"
-                        >
-                          {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">Send To</label>
-                  <Select value={selectedContact} onValueChange={setSelectedContact}>
-                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                      <SelectValue placeholder="Select Recipients" />
-                    </SelectTrigger>
-                    <SelectContent>
+        <Card className="p-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
+          <form onSubmit={handleSubmit}>
+            {/* Top section with dropdowns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Grade</label>
+                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                  <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                    <SelectValue placeholder="Select Grade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {grades.map(grade => (
                       <SelectItem 
-                        value="primary"
+                        key={grade} 
+                        value={grade}
                         className="cursor-pointer hover:bg-[#646cff] hover:text-white"
                       >
-                        Primary Contact
+                        {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
                       </SelectItem>
-                      <SelectItem 
-                        value="both"
-                        className="cursor-pointer hover:bg-[#646cff] hover:text-white"
-                      >
-                        Both Parents
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">Send To</label>
+                <Select value={selectedContact} onValueChange={setSelectedContact}>
+                  <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                    <SelectValue placeholder="Select Recipients" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="primary">Primary Contact</SelectItem>
+                    <SelectItem value="both">Both Parents</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-              {/* Recipients Preview */}
-              {previewRecipients.length > 0 && (
-                <Card className="mb-4">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Users className="w-5 h-5" />
-                      Recipients ({previewRecipients.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {/* Summary line */}
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                        <FaGraduationCap className="w-4 h-4" />
-                        <span>
-                          {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
-                          {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
-                        </span>
-                      </div>
-
-                      {/* Simple list of recipients */}
-                      <div className="max-h-40 overflow-y-auto space-y-1">
-                        {previewRecipients.map((recipient, index) => (
-                          <div key={index} className="text-sm flex justify-between">
-                            <span>{recipient.name}</span>
-                            <span className="text-gray-500">{recipient.number}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Total count and credits */}
-                      <div className="pt-3 border-t text-sm text-gray-600 flex items-center justify-between">
-                        <span>Total recipients: {previewRecipients.length}</span>
-                        {estimatedCredits > 0 && (
-                          <span>Estimated credits: {estimatedCredits}</span>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Message Input */}
-              <div className="space-y-2">
+            {/* Main content area - split into two columns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Left column - Message input */}
+              <div className="space-y-4">
                 <label className="text-sm font-medium block">Message</label>
                 <Textarea
                   value={message}
                   onChange={handleMessageChange}
                   placeholder="Type your message here..."
-                  className="min-h-[100px]"
+                  className="min-h-[240px] resize-y"
                 />
                 <div className="text-sm text-gray-500">
-                  {message.length} characters • {Math.ceil(message.length / 160)} SMS segments
+                  <span className="text-blue-600">{message.length}</span> characters • 
+                  <span className="text-blue-600">{Math.ceil(message.length / 160)}</span> SMS segments
                 </div>
+                <Button
+                  type="submit"
+                  disabled={isLoading || !message.trim() || previewRecipients.length === 0}
+                  className="w-full bg-[#646cff] hover:bg-[#535bf2] text-white mt-6"
+                >
+                  {isLoading ? (
+                    <>
+                      <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Send Message
+                    </>
+                  )}
+                </Button>
               </div>
-            </div>
 
-            <Button
-              type="submit"
-              disabled={isLoading || !message.trim() || previewRecipients.length === 0}
-              className="w-full bg-[#646cff] hover:bg-[#535bf2] text-white"
-            >
-              {isLoading ? (
-                <>
-                  <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Send Message
-                </>
+              {/* Right column - Recipients preview */}
+              {previewRecipients.length > 0 && (
+                <div className="bg-gray-50 rounded-lg p-6 h-full">
+                  <div className="flex items-center gap-3 mb-4">
+                    <Users className="w-5 h-5 text-gray-500" />
+                    <span className="font-medium">Recipients (<span className="text-blue-600">{previewRecipients.length}</span>)</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+                    <FaGraduationCap className="w-4 h-4" />
+                    <span>
+                      {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
+                      {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
+                    </span>
+                  </div>
+
+                  <div className="max-h-[240px] overflow-y-auto border rounded-lg bg-white">
+                    {previewRecipients.map((recipient, index) => (
+                      <div key={index} 
+                        className="text-sm flex justify-between p-3 border-b last:border-b-0 hover:bg-gray-50"
+                      >
+                        <span>{recipient.name}</span>
+                        <span className="text-blue-600 font-medium">{recipient.number}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 text-sm text-gray-600 flex items-center justify-between">
+                    <span>Total recipients: <span className="text-blue-600 font-medium">{previewRecipients.length}</span></span>
+                    <span>•</span>
+                    {estimatedCredits > 0 && (
+                      <span>Estimated credits: <span className="text-blue-600 font-medium">{estimatedCredits}</span></span>
+                    )}
+                  </div>
+                </div>
               )}
-            </Button>
+            </div>
           </form>
         </Card>
       )}
 
-      {/* Empty Inbox State */}
       {activeTab === 'inbox' && (
         <Card className="divide-y divide-gray-100">
           <div className="p-8 text-center">
