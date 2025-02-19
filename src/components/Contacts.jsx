@@ -45,25 +45,28 @@ function Contacts() {
   }
 
   const saveContactsToFirestore = async (validatedContacts) => {
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
     
     try {
       const batch = writeBatch(db);
       
       for (const row of validatedContacts) {
+        // Format the grade to be consistent
+        const formattedGrade = row.grade.toString().trim();
+        
         // Add to contacts collection
         const contactRef = doc(collection(db, 'schools', SCHOOL_ID, 'contacts'));
         batch.set(contactRef, {
-          student_name: row.student_name,
-          grade: row.grade,
-          device_id: row.device_id,
+          student_name: row.student_name.trim(),
+          grade: formattedGrade,
+          device_id: row.device_id.trim(),
           imei_number: row.imei_number,
-          mother_name: row.mother_name,
+          mother_name: row.mother_name.trim(),
           mother_contact: row.mother_contact,
-          father_name: row.father_name,
+          father_name: row.father_name.trim(),
           father_contact: row.father_contact,
-          primary_contact: row.primary_contact,
+          primary_contact: row.primary_contact.toLowerCase().trim(),
           createdAt: new Date(),
           updatedAt: new Date()
         });
@@ -73,9 +76,9 @@ function Contacts() {
           const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'));
           batch.set(deviceRef, {
             imei: row.imei_number,
-            device_id: row.device_id,
-            student_name: row.student_name,
-            grade: row.grade,
+            device_id: row.device_id.trim(),
+            student_name: row.student_name.trim(),
+            grade: formattedGrade,
             status: 'active',
             last_seen: new Date(),
             assigned_to: contactRef.id
@@ -84,16 +87,18 @@ function Contacts() {
       }
 
       await batch.commit();
+      console.log('Successfully saved contacts:', validatedContacts.length);
       
       // Refresh the contacts list
-      await fetchContacts()
+      await fetchContacts();
       
     } catch (error) {
-      setError('Error saving contacts: ' + error.message)
+      console.error('Error saving contacts:', error);
+      setError('Error saving contacts: ' + error.message);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   // Template structure for student contacts
   const templateData = [
@@ -399,93 +404,95 @@ function Contacts() {
       </Card>
 
       {/* Contacts Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Grade
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Device ID
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  IMEI Number
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Mother's Contact
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Father's Contact
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {contacts.map((contact, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {contact.student_name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {contact.grade}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {contact.device_id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">
-                    {contact.imei_number}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className={`text-sm font-medium ${contact.primary_contact === 'mother' ? 'text-blue-600' : 'text-gray-900'}`}>
-                          {contact.mother_name}
-                          {contact.primary_contact === 'mother' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                              Primary
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm text-gray-500">{contact.mother_contact}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className={`text-sm font-medium ${contact.primary_contact === 'father' ? 'text-blue-600' : 'text-gray-900'}`}>
-                          {contact.father_name}
-                          {contact.primary_contact === 'father' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                              Primary
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm text-gray-500">{contact.father_contact}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <button 
-                      onClick={() => setDeleteDialog({ open: true, contactId: contact.id })}
-                      className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
+      <div className="mt-8">
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    Student
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    Grade
+                  </th>
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    Device ID
+                  </th>
+                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    IMEI
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Mother
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Father
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {contacts.map((contact, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm">
+                      <div className="font-medium text-gray-900">{contact.student_name}</div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      {contact.grade}
+                    </td>
+                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      {contact.device_id}
+                    </td>
+                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-500">
+                      {contact.imei_number}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-medium ${contact.primary_contact === 'mother' ? 'text-blue-600' : 'text-gray-900'}`}>
+                            {contact.mother_name}
+                            {contact.primary_contact === 'mother' && (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                Primary
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-sm text-gray-500">{contact.mother_contact}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className={`text-sm font-medium ${contact.primary_contact === 'father' ? 'text-blue-600' : 'text-gray-900'}`}>
+                            {contact.father_name}
+                            {contact.primary_contact === 'father' && (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                Primary
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-sm text-gray-500">{contact.father_contact}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <button 
+                        onClick={() => setDeleteDialog({ open: true, contactId: contact.id })}
+                        className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog 

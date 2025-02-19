@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../config/firebase';
+import { db, SCHOOL_ID } from '../config/firebase';
 import { collection, getDocs, addDoc, query, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import { FaPaperPlane, FaUserFriends, FaSpinner, FaHistory, FaCheck, FaClock, FaExclamationCircle, FaUsers, FaGraduationCap, FaInbox, FaEnvelope, FaHome, FaQuestionCircle, FaPlus } from 'react-icons/fa';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
@@ -34,8 +34,8 @@ function Messages() {
   const [sentMessages, setSentMessages] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [activeTab, setActiveTab] = useState('new');  // 'new', 'inbox', or 'sent'
-
-  const SCHOOL_ID = 'st-marys';
+  const [estimatedCredits, setEstimatedCredits] = useState(0);
+  const [grades, setGrades] = useState(['all']);
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
@@ -47,14 +47,43 @@ function Messages() {
   const fetchContacts = async () => {
     try {
       setIsLoading(true);
+      console.log('Fetching contacts for school:', SCHOOL_ID);
+      
       const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
       const querySnapshot = await getDocs(contactsRef);
+      
+      if (querySnapshot.empty) {
+        console.log('No contacts found in Firebase');
+        setContacts([]);
+        return;
+      }
+      
       const contactsList = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      
+      console.log('Fetched contacts:', contactsList);
+      console.log('Contact grades:', contactsList.map(c => c.grade));
+      
       setContacts(contactsList);
+
+      // Extract grades immediately after setting contacts
+      const uniqueGrades = [...new Set(contactsList.map(contact => 
+        contact.grade?.toString().trim()
+      ))].filter(Boolean);
+      
+      const sortedGrades = uniqueGrades.sort((a, b) => {
+        const gradeA = a.replace(/[^0-9]/g, '');
+        const gradeB = b.replace(/[^0-9]/g, '');
+        return parseInt(gradeA) - parseInt(gradeB);
+      });
+      
+      setGrades(['all', ...sortedGrades]);
+      console.log('Grades set to:', ['all', ...sortedGrades]);
+
     } catch (error) {
+      console.error('Error fetching contacts:', error);
       setError('Error fetching contacts: ' + error.message);
     } finally {
       setIsLoading(false);
@@ -76,48 +105,72 @@ function Messages() {
     }
   };
 
-  // Get unique grades from contacts
-  const grades = ['all', ...new Set(contacts.map(contact => contact.grade))].sort();
-
-  // Filter recipients based on selections
+  // Update the recipients filter for better handling
   useEffect(() => {
+    if (contacts.length === 0) return;
+
     const filtered = contacts.filter(contact => {
-      const gradeMatch = selectedGrade === 'all' || contact.grade === selectedGrade;
-      const contactMatch = selectedContact === 'primary' ? 
-        true : // When sending to primary contacts only
-        selectedContact === 'both'; // When sending to both parents
-      return gradeMatch && contactMatch;
+      if (!contact.grade) return false;
+      return selectedGrade === 'all' || contact.grade.toString() === selectedGrade.toString();
     });
 
     const recipients = filtered.flatMap(contact => {
-      if (selectedContact === 'primary') {
-        // Only include primary contact
-        const primaryNumber = contact.primary_contact === 'mother' ? 
-          contact.mother_contact : contact.father_contact;
-        return [{
-          name: contact.student_name,
-          number: primaryNumber,
-          relation: contact.primary_contact
-        }];
-      } else {
-        // Include both parents
-        return [
-          {
+      const recipients = [];
+      
+      if (selectedContact === 'both' || 
+         (selectedContact === 'primary' && contact.primary_contact === 'mother')) {
+        if (contact.mother_contact) {
+          recipients.push({
             name: contact.student_name,
             number: contact.mother_contact,
-            relation: 'mother'
-          },
-          {
+            relation: 'mother',
+            grade: contact.grade
+          });
+        }
+      }
+      
+      if (selectedContact === 'both' || 
+         (selectedContact === 'primary' && contact.primary_contact === 'father')) {
+        if (contact.father_contact) {
+          recipients.push({
             name: contact.student_name,
             number: contact.father_contact,
-            relation: 'father'
-          }
-        ];
+            relation: 'father',
+            grade: contact.grade
+          });
+        }
       }
+      
+      return recipients;
     });
 
     setPreviewRecipients(recipients);
   }, [contacts, selectedGrade, selectedContact]);
+
+  // Update the credit calculation function
+  const calculateEstimatedCredits = (messageText, recipientCount) => {
+    // No message, no credits
+    if (!messageText?.trim()) return 0;
+    
+    // No recipients, no credits
+    if (!recipientCount) return 0;
+    
+    // Calculate segments needed
+    const segmentCount = Math.ceil(messageText.length / 160);
+    
+    // Total credits = segments × recipients
+    return segmentCount * recipientCount;
+  };
+
+  // Update the message change handler
+  const handleMessageChange = (e) => {
+    const newMessage = e.target.value;
+    setMessage(newMessage);
+    
+    // Calculate credits based on new message
+    const credits = calculateEstimatedCredits(newMessage, previewRecipients.length);
+    setEstimatedCredits(credits);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -225,39 +278,87 @@ function Messages() {
     }
   };
 
+  // Update the recipients preview section
+  const RecipientsList = ({ recipients }) => {
+    if (recipients.length === 0) return null;
+
+    return (
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Recipients ({recipients.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {/* Summary line */}
+            <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+              <FaGraduationCap className="w-4 h-4" />
+              <span>
+                {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
+                {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
+              </span>
+            </div>
+
+            {/* Simple list of recipients */}
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {recipients.map((recipient, index) => (
+                <div key={index} className="text-sm flex justify-between">
+                  <span>{recipient.name}</span>
+                  <span className="text-gray-500">{recipient.number}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Total count and credits */}
+            <div className="pt-3 border-t text-sm text-gray-600 flex items-center justify-between">
+              <span>Total recipients: {recipients.length}</span>
+              {estimatedCredits > 0 && (
+                <span>Estimated credits: {estimatedCredits}</span>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 p-4 md:p-6">
+      {/* Header - Make it stack on mobile */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-gray-600 w-full sm:w-auto">
           Credits: <span className="font-medium">386</span>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg w-fit">
-        <Button
-          variant={activeTab === 'new' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('new')}
-          className="rounded-md px-4"
-        >
-          New SMS
-        </Button>
-        <Button
-          variant={activeTab === 'inbox' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('inbox')}
-          className="rounded-md px-4"
-        >
-          Inbox
-        </Button>
-        <Button
-          variant={activeTab === 'sent' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('sent')}
-          className="rounded-md px-4"
-        >
-          Sent
-        </Button>
+      {/* Tabs - Make them scroll horizontally on mobile */}
+      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg w-fit min-w-full sm:min-w-0">
+          <Button
+            variant={activeTab === 'new' ? "secondary" : "ghost"}
+            onClick={() => setActiveTab('new')}
+            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
+          >
+            New SMS
+          </Button>
+          <Button
+            variant={activeTab === 'inbox' ? "secondary" : "ghost"}
+            onClick={() => setActiveTab('inbox')}
+            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
+          >
+            Inbox
+          </Button>
+          <Button
+            variant={activeTab === 'sent' ? "secondary" : "ghost"}
+            onClick={() => setActiveTab('sent')}
+            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
+          >
+            Sent
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -267,84 +368,92 @@ function Messages() {
         </div>
       )}
 
-      {/* New Message Form */}
+      {/* New Message Form - Responsive grid */}
       {activeTab === 'new' && (
-        <Card className="p-6">
+        <Card className="p-4 md:p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Compose Message</h2>
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Grade</label>
-                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Grade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {grades.map(grade => (
-                      <SelectItem key={grade} value={grade}>
-                        {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Recipients</label>
-                <Select value={selectedContact} onValueChange={setSelectedContact}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Recipients" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="primary">Primary Contact Only</SelectItem>
-                    <SelectItem value="both">Both Parents</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">Message</label>
-              <Textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type your message here..."
-                rows={4}
-                className="resize-none"
-              />
-              <div className="text-sm text-gray-500 text-right">
-                {message.length}/160 characters
-              </div>
-            </div>
-
-            {previewRecipients.length > 0 && (
-              <Card className="bg-gray-50/50">
-                <div className="p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-gray-900 mb-3">
-                    <Users className="w-4 h-4" />
-                    Recipients ({previewRecipients.length})
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {previewRecipients.slice(0, 6).map((recipient, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 bg-white rounded-md text-sm">
-                        <span className="font-medium text-gray-900">{recipient.name}</span>
-                        <span className="text-gray-500">{recipient.relation}</span>
-                      </div>
-                    ))}
-                    {previewRecipients.length > 6 && (
-                      <div className="p-2 bg-white rounded-md text-center text-gray-500 text-sm">
-                        +{previewRecipients.length - 6} more
-                      </div>
-                    )}
-                  </div>
+            <div className="space-y-4">
+              {/* Grade and Contact Type Selection - Stack on mobile */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Grade</label>
+                  <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                      <SelectValue placeholder="Select Grade" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[40vh]">
+                      {grades.map(grade => (
+                        <SelectItem 
+                          key={grade} 
+                          value={grade}
+                          className="cursor-pointer hover:bg-[#646cff] hover:text-white"
+                        >
+                          {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </Card>
-            )}
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Send To</label>
+                  <Select value={selectedContact} onValueChange={setSelectedContact}>
+                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                      <SelectValue placeholder="Select Recipients" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem 
+                        value="primary"
+                        className="cursor-pointer hover:bg-[#646cff] hover:text-white"
+                      >
+                        Primary Contact
+                      </SelectItem>
+                      <SelectItem 
+                        value="both"
+                        className="cursor-pointer hover:bg-[#646cff] hover:text-white"
+                      >
+                        Both Parents
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-            <Button 
+              {/* Recipients List - Scrollable on mobile */}
+              <div className="bg-gray-50 rounded-lg p-4 max-h-[40vh] overflow-y-auto">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-5 h-5 text-gray-500" />
+                  <span className="font-medium">Recipients ({previewRecipients.length})</span>
+                </div>
+                <div className="space-y-2">
+                  {previewRecipients.map((recipient, index) => (
+                    <div key={index} className="flex justify-between text-sm p-2 bg-white rounded">
+                      <span>{recipient.name}</span>
+                      <span className="text-gray-500">{recipient.number}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Message Input */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium block">Message</label>
+                <Textarea
+                  value={message}
+                  onChange={handleMessageChange}
+                  placeholder="Type your message here..."
+                  className="min-h-[100px] w-full"
+                />
+                <div className="text-sm text-gray-500">
+                  {message.length} characters • {Math.ceil(message.length / 160)} SMS segments
+                </div>
+              </div>
+            </div>
+
+            <Button
               type="submit"
               disabled={isLoading || !message.trim()}
-              className="w-full"
+              className="w-full sm:w-auto"
             >
               <Send className="w-4 h-4 mr-2" />
               {isLoading ? 'Sending...' : 'Send Message'}
