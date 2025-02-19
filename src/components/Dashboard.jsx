@@ -101,13 +101,13 @@ function Dashboard() {
     <div className="min-h-screen bg-gray-100">
       {/* Top Stats Bar */}
       <div className="bg-white border-b">
-        <div className="h-16 flex items-center px-8">
-          <div className="max-w-7xl mx-auto">
+        <div className="min-h-[5rem] flex items-center px-4 sm:px-8 py-4">
+          <div className="max-w-7xl mx-auto w-full space-y-1">
             <PageHeader
               title={SCHOOL_NAME}
               subtitle={schoolInfo.address}
             >
-              <div className="flex items-center gap-4 text-sm text-gray-500">
+              <div className="hidden sm:flex items-center gap-4 text-sm text-gray-500">
                 <span>{new Date().toLocaleDateString()}</span>
                 <span>•</span>
                 <span>Credits: {stats.smsCredit}</span>
@@ -118,12 +118,12 @@ function Dashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-8 py-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
           {/* SMS Credits Card */}
           <Card className="bg-white overflow-hidden">
-            <div className="p-6">
+            <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
                 <div className="p-3 rounded-xl bg-purple-50">
                   <Wallet className="w-6 h-6 text-purple-600" />
@@ -134,14 +134,14 @@ function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-3 bg-purple-50 border-t border-purple-100">
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-purple-50 border-t border-purple-100">
               <span className="text-sm text-purple-600">Available for messages</span>
             </div>
           </Card>
 
           {/* Students Card */}
           <Card className="bg-white overflow-hidden">
-            <div className="p-6">
+            <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
                 <div className="p-3 rounded-xl bg-blue-50/50">
                   <Users className="w-6 h-6 text-blue-600" />
@@ -152,14 +152,14 @@ function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-3 bg-blue-50 border-t border-blue-100">
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
               <span className="text-sm text-blue-600">Active enrollments</span>
             </div>
           </Card>
 
           {/* Devices Card */}
           <Card className="bg-white overflow-hidden">
-            <div className="p-6">
+            <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
                 <div className="p-3 rounded-xl bg-green-50">
                   <Tablet className="w-6 h-6 text-green-600" />
@@ -172,7 +172,7 @@ function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-3 bg-green-50 border-t border-green-100">
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
               <span className="text-sm text-green-600">Devices tracked</span>
             </div>
           </Card>
@@ -180,15 +180,15 @@ function Dashboard() {
 
         {/* Activity Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b">
+          <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-              <span className="text-sm text-gray-500">Last 24 hours</span>
+              <span className="text-xs sm:text-sm text-gray-500">Last 24 hours</span>
             </div>
           </div>
           <div className="divide-y divide-gray-100">
             {recentActivity.map((activity) => (
-              <div key={activity.id} className="flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors">
+              <div key={activity.id} className="flex items-start gap-3 sm:gap-4 px-4 sm:px-8 py-4 sm:py-6 hover:bg-gray-50 transition-colors">
                 {activity.type === 'alert' && 
                   <AlertTriangle className="w-4 h-4 text-red-500 mt-1 shrink-0" />
                 }
@@ -199,22 +199,22 @@ function Dashboard() {
                   <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
                 }
                 
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
                     <div>
-                      <p className="font-medium text-gray-900 mb-1">{activity.device}</p>
-                      <p className="text-gray-600 text-sm leading-relaxed">{activity.message}</p>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="font-medium text-gray-900 mb-2">{activity.device}</p>
+                      <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 sm:line-clamp-none">{activity.message}</p>
+                      <p className="text-sm text-gray-500 mt-2">
                         {activity.student} - {activity.grade}
                       </p>
                     </div>
-                    <span className="text-xs text-gray-500 whitespace-nowrap ml-4">{activity.time}</span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap mt-2 sm:mt-0 sm:ml-4">{activity.time}</span>
                   </div>
                 </div>
               </div>
             ))}
             {recentActivity.length === 0 && (
-              <div className="px-6 py-12 text-center">
+              <div className="px-4 sm:px-8 py-12 sm:py-16 text-center">
                 <History className="w-8 h-8 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500 text-sm">No recent activity to show</p>
               </div>

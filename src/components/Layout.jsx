@@ -6,15 +6,15 @@ export function PageHeader({
   children // for action buttons/elements
 }) {
   return (
-    <div className="flex justify-between items-start border-b border-gray-200 pb-5 mb-6">
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">{title}</h1>
         {subtitle && (
-          <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+          <p className="mt-0.5 sm:mt-1 text-sm text-gray-500 line-clamp-1">{subtitle}</p>
         )}
       </div>
       {children && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mt-2 sm:mt-0">
           {children}
         </div>
       )}
