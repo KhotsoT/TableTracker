@@ -40,23 +40,26 @@ function Dashboard() {
       
       // Fetch contacts for student count
       const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts')
-      const contactsSnap = await getDocs(contactsRef)
-      const totalStudents = contactsSnap.size
+      const contactsQuery = query(contactsRef)
+      const contactsSnap = await getDocs(contactsQuery)
+      const totalStudents = contactsSnap.docs.length
       
-      // Fetch devices
+      // Fetch devices from devices collection
       const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices')
-      const devicesSnap = await getDocs(devicesRef)
-      const devices = devicesSnap.docs.map(doc => doc.data())
-      const activeDevices = devices.filter(device => device.status === 'active')
+      const devicesQuery = query(devicesRef)
+      const devicesSnap = await getDocs(devicesQuery)
+      const devices = devicesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
       
-      // Fetch real SMS credit from API
-      const smsCredit = await getSMSBalance()
+      console.log('Devices from collection:', devices)
       
       setStats({
         totalTablets: devices.length,
-        activeTablets: activeDevices.length,
+        activeTablets: devices.length, // For now all devices are considered active
         totalStudents,
-        smsCredit
+        smsCredit: await getSMSBalance()
       })
       
       // Fetch alerts
@@ -148,7 +151,13 @@ function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Total Students</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.totalStudents}</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {isLoading ? (
+                      <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                    ) : (
+                      stats.totalStudents
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
@@ -167,7 +176,11 @@ function Dashboard() {
                 <div>
                   <p className="text-sm font-medium text-gray-500">Active Devices</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {stats.activeTablets}/{stats.totalTablets}
+                    {isLoading ? (
+                      <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
+                    ) : (
+                      `${stats.activeTablets}/${stats.totalTablets}`
+                    )}
                   </p>
                 </div>
               </div>

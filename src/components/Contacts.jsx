@@ -1,15 +1,26 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { Upload, Download, FileSpreadsheet, Info } from 'lucide-react'
+import { Upload, Download, FileSpreadsheet, Trash2, AlertCircle } from 'lucide-react'
 import { db } from '../config/firebase'
-import { collection, getDocs, addDoc, deleteDoc, query, where } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc } from 'firebase/firestore'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog"
 
 function Contacts() {
   const [contacts, setContacts] = useState([])
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, contactId: null })
 
   const SCHOOL_ID = 'st-marys' // This should match your school's ID in Firestore
 
@@ -40,24 +51,41 @@ function Contacts() {
     setError(null)
     
     try {
-      // Reference to the contacts subcollection
-      const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts')
-
-      // First, delete existing contacts
-      const existingContacts = await getDocs(contactsRef)
-      const deletePromises = existingContacts.docs.map(doc => deleteDoc(doc.ref))
-      await Promise.all(deletePromises)
-
-      // Then add new contacts
-      const addPromises = validatedContacts.map(contact => {
-        return addDoc(contactsRef, {
-          ...contact,
+      const batch = writeBatch(db);
+      
+      for (const row of validatedContacts) {
+        // Add to contacts collection
+        const contactRef = doc(collection(db, 'schools', SCHOOL_ID, 'contacts'));
+        batch.set(contactRef, {
+          student_name: row.student_name,
+          grade: row.grade,
+          device_id: row.device_id,
+          imei_number: row.imei_number,
+          mother_name: row.mother_name,
+          mother_contact: row.mother_contact,
+          father_name: row.father_name,
+          father_contact: row.father_contact,
+          primary_contact: row.primary_contact,
           createdAt: new Date(),
           updatedAt: new Date()
-        })
-      })
+        });
 
-      await Promise.all(addPromises)
+        // If device info exists, add to devices collection
+        if (row.imei_number && row.device_id) {
+          const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'));
+          batch.set(deviceRef, {
+            imei: row.imei_number,
+            device_id: row.device_id,
+            student_name: row.student_name,
+            grade: row.grade,
+            status: 'active',
+            last_seen: new Date(),
+            assigned_to: contactRef.id
+          });
+        }
+      }
+
+      await batch.commit();
       
       // Refresh the contacts list
       await fetchContacts()
@@ -222,6 +250,44 @@ function Contacts() {
     XLSX.writeFile(workbook, 'student_devices.xlsx')
   }
 
+  const handleDelete = async (contactId) => {
+    try {
+      setIsLoading(true)
+      
+      // Get the contact to check if it has a device
+      const contactRef = doc(db, 'schools', SCHOOL_ID, 'contacts', contactId)
+      const contactSnap = await getDoc(contactRef)
+      const contactData = contactSnap.data()
+      
+      const batch = writeBatch(db)
+      
+      // Delete from contacts collection
+      batch.delete(contactRef)
+      
+      // If contact has device, delete from devices collection
+      if (contactData.device_id) {
+        const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices')
+        const deviceQuery = query(devicesRef, where('device_id', '==', contactData.device_id))
+        const deviceSnap = await getDocs(deviceQuery)
+        
+        deviceSnap.docs.forEach(doc => {
+          batch.delete(doc.ref)
+        })
+      }
+      
+      await batch.commit()
+      
+      // Update local state
+      setContacts(prev => prev.filter(c => c.id !== contactId))
+      setDeleteDialog({ open: false, contactId: null })
+    } catch (error) {
+      console.error('Error deleting contact:', error)
+      setError('Failed to delete contact')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
@@ -230,7 +296,7 @@ function Contacts() {
         <Button 
           variant="outline" 
           onClick={downloadTemplate}
-          className="flex items-center gap-2"
+          className="flex items-center gap-2 text-gray-900 hover:text-blue-600 hover:border-blue-600 transition-colors"
         >
           <FileSpreadsheet className="w-4 h-4" />
           Download Template
@@ -244,28 +310,26 @@ function Contacts() {
       )}
 
       {/* Actions */}
-      <Card className="p-4">
-        <div className="flex gap-4">
-          <div className="flex-1">
+      <Card>
+        <div className="p-6 flex justify-between items-center border-b">
+          <div className="flex items-center gap-4">
             <label 
-              htmlFor="file-upload" 
-              className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 cursor-pointer transition-colors"
+              className="cursor-pointer flex items-center gap-2 text-gray-900 hover:text-blue-600 transition-colors px-4 py-2 border-2 border-dashed border-gray-300 hover:border-blue-600 rounded-lg"
             >
-              <Upload className="w-5 h-5 text-gray-500" />
-              <span className="text-gray-600">Import Students</span>
               <input
-                id="file-upload"
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx, .xls"
                 onChange={handleFileUpload}
                 className="hidden"
               />
+              <Upload className="w-4 h-4" />
+              Import Students
             </label>
           </div>
           <Button 
             variant="outline"
             onClick={exportContacts}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 text-gray-900 bg-blue-50/50 border-0 hover:text-blue-600 transition-colors"
             disabled={contacts.length === 0}
           >
             <Download className="w-4 h-4" />
@@ -298,6 +362,9 @@ function Contacts() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Father's Contact
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -328,9 +395,6 @@ function Contacts() {
                         </span>
                         <span className="text-sm text-gray-500">{contact.mother_contact}</span>
                       </div>
-                      <button className="text-gray-400 hover:text-gray-600">
-                        <Info className="w-4 h-4" />
-                      </button>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -346,10 +410,15 @@ function Contacts() {
                         </span>
                         <span className="text-sm text-gray-500">{contact.father_contact}</span>
                       </div>
-                      <button className="text-gray-400 hover:text-gray-600">
-                        <Info className="w-4 h-4" />
-                      </button>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button 
+                      onClick={() => setDeleteDialog({ open: true, contactId: contact.id })}
+                      className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -357,6 +426,30 @@ function Contacts() {
           </table>
         </div>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog 
+        open={deleteDialog.open} 
+        onOpenChange={(open) => setDeleteDialog({ open, contactId: null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Contact</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this contact and their device information.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDelete(deleteDialog.contactId)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isLoading && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center">

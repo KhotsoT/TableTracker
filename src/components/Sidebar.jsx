@@ -89,7 +89,7 @@ function Sidebar() {
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-white">
         <button
           onClick={handleLogout}
-          className="flex items-center justify-center w-full gap-2 px-4 py-2 text-sm font-medium text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+          className="flex items-center justify-center w-full gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
         >
           <LogOut className="w-5 h-5" />
           <span>Logout</span>
