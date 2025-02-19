@@ -278,111 +278,63 @@ function Messages() {
     }
   };
 
-  // Update the recipients preview section
-  const RecipientsList = ({ recipients }) => {
-    if (recipients.length === 0) return null;
-
-    return (
-      <Card className="mb-4">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Recipients ({recipients.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {/* Summary line */}
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-              <FaGraduationCap className="w-4 h-4" />
-              <span>
-                {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
-                {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
-              </span>
-            </div>
-
-            {/* Simple list of recipients */}
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {recipients.map((recipient, index) => (
-                <div key={index} className="text-sm flex justify-between">
-                  <span>{recipient.name}</span>
-                  <span className="text-gray-500">{recipient.number}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Total count and credits */}
-            <div className="pt-3 border-t text-sm text-gray-600 flex items-center justify-between">
-              <span>Total recipients: {recipients.length}</span>
-              {estimatedCredits > 0 && (
-                <span>Estimated credits: {estimatedCredits}</span>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      {/* Header - Make it stack on mobile */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-        <div className="text-sm text-gray-600 w-full sm:w-auto">
+    <div className="p-4 md:p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Messages</h1>
+        <div className="text-sm text-gray-600">
           Credits: <span className="font-medium">386</span>
         </div>
       </div>
 
-      {/* Tabs - Make them scroll horizontally on mobile */}
-      <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-        <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg w-fit min-w-full sm:min-w-0">
-          <Button
-            variant={activeTab === 'new' ? "secondary" : "ghost"}
-            onClick={() => setActiveTab('new')}
-            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
-          >
-            New SMS
-          </Button>
-          <Button
-            variant={activeTab === 'inbox' ? "secondary" : "ghost"}
-            onClick={() => setActiveTab('inbox')}
-            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
-          >
-            Inbox
-          </Button>
-          <Button
-            variant={activeTab === 'sent' ? "secondary" : "ghost"}
-            onClick={() => setActiveTab('sent')}
-            className="rounded-md px-4 flex-1 sm:flex-none whitespace-nowrap"
-          >
-            Sent
-          </Button>
-        </div>
+      {/* Tabs */}
+      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg mb-6">
+        <Button
+          variant={activeTab === 'new' ? "secondary" : "ghost"}
+          onClick={() => setActiveTab('new')}
+          className="rounded-md px-4"
+        >
+          New SMS
+        </Button>
+        <Button
+          variant={activeTab === 'inbox' ? "secondary" : "ghost"}
+          onClick={() => setActiveTab('inbox')}
+          className="rounded-md px-4"
+        >
+          Inbox
+        </Button>
+        <Button
+          variant={activeTab === 'sent' ? "secondary" : "ghost"}
+          onClick={() => setActiveTab('sent')}
+          className="rounded-md px-4"
+        >
+          Sent
+        </Button>
       </div>
 
       {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2">
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2 mb-6">
           <AlertCircle className="w-4 h-4" />
           {error}
         </div>
       )}
 
-      {/* New Message Form - Responsive grid */}
+      {/* New Message Form */}
       {activeTab === 'new' && (
-        <Card className="p-4 md:p-6">
+        <Card className="p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-6">Compose Message</h2>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
-              {/* Grade and Contact Type Selection - Stack on mobile */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Grade and Contact Type Selection */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium mb-1 block">Grade</label>
                   <Select value={selectedGrade} onValueChange={setSelectedGrade}>
                     <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
                       <SelectValue placeholder="Select Grade" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-[40vh]">
+                    <SelectContent>
                       {grades.map(grade => (
                         <SelectItem 
                           key={grade} 
@@ -419,21 +371,47 @@ function Messages() {
                 </div>
               </div>
 
-              {/* Recipients List - Scrollable on mobile */}
-              <div className="bg-gray-50 rounded-lg p-4 max-h-[40vh] overflow-y-auto">
-                <div className="flex items-center gap-2 mb-3">
-                  <Users className="w-5 h-5 text-gray-500" />
-                  <span className="font-medium">Recipients ({previewRecipients.length})</span>
-                </div>
-                <div className="space-y-2">
-                  {previewRecipients.map((recipient, index) => (
-                    <div key={index} className="flex justify-between text-sm p-2 bg-white rounded">
-                      <span>{recipient.name}</span>
-                      <span className="text-gray-500">{recipient.number}</span>
+              {/* Recipients Preview */}
+              {previewRecipients.length > 0 && (
+                <Card className="mb-4">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      Recipients ({previewRecipients.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {/* Summary line */}
+                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                        <FaGraduationCap className="w-4 h-4" />
+                        <span>
+                          {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
+                          {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
+                        </span>
+                      </div>
+
+                      {/* Simple list of recipients */}
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {previewRecipients.map((recipient, index) => (
+                          <div key={index} className="text-sm flex justify-between">
+                            <span>{recipient.name}</span>
+                            <span className="text-gray-500">{recipient.number}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Total count and credits */}
+                      <div className="pt-3 border-t text-sm text-gray-600 flex items-center justify-between">
+                        <span>Total recipients: {previewRecipients.length}</span>
+                        {estimatedCredits > 0 && (
+                          <span>Estimated credits: {estimatedCredits}</span>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Message Input */}
               <div className="space-y-2">
@@ -442,7 +420,7 @@ function Messages() {
                   value={message}
                   onChange={handleMessageChange}
                   placeholder="Type your message here..."
-                  className="min-h-[100px] w-full"
+                  className="min-h-[100px]"
                 />
                 <div className="text-sm text-gray-500">
                   {message.length} characters • {Math.ceil(message.length / 160)} SMS segments
@@ -452,51 +430,26 @@ function Messages() {
 
             <Button
               type="submit"
-              disabled={isLoading || !message.trim()}
-              className="w-full sm:w-auto"
+              disabled={isLoading || !message.trim() || previewRecipients.length === 0}
+              className="w-full bg-[#646cff] hover:bg-[#535bf2] text-white"
             >
-              <Send className="w-4 h-4 mr-2" />
-              {isLoading ? 'Sending...' : 'Send Message'}
+              {isLoading ? (
+                <>
+                  <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Message
+                </>
+              )}
             </Button>
           </form>
         </Card>
       )}
 
-      {/* Sent Messages */}
-      {activeTab === 'sent' && (
-        <Card className="divide-y divide-gray-100">
-          {sentMessages.map((msg) => (
-            <div key={msg.id} className="p-4 hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <div className="space-y-1">
-                  <p className="text-sm text-gray-900">{msg.message}</p>
-                  <p className="text-xs text-gray-500">
-                    Sent to: {msg.totalRecipients} recipients 
-                    ({msg.selectedGrade === 'all' ? 'All Grades' : `Grade ${msg.selectedGrade}`})
-                  </p>
-                </div>
-                <span className="text-xs text-gray-500">
-                  {formatDate(msg.sentAt)}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-gray-500">
-                <span>Delivered: {msg.deliveredCount}/{msg.totalRecipients}</span>
-                {msg.failedCount > 0 && (
-                  <span className="text-red-500">Failed: {msg.failedCount}</span>
-                )}
-              </div>
-            </div>
-          ))}
-          {sentMessages.length === 0 && (
-            <div className="p-8 text-center">
-              <Send className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No messages sent yet</p>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Inbox Empty State */}
+      {/* Empty Inbox State */}
       {activeTab === 'inbox' && (
         <Card className="divide-y divide-gray-100">
           <div className="p-8 text-center">
@@ -507,15 +460,6 @@ function Messages() {
             </p>
           </div>
         </Card>
-      )}
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="fixed inset-0 bg-black/20 flex items-center justify-center">
-          <div className="bg-white p-4 rounded-lg shadow-lg">
-            Loading...
-          </div>
-        </div>
       )}
     </div>
   );
