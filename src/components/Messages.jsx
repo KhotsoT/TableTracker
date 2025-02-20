@@ -36,12 +36,18 @@ function Messages() {
   const [activeTab, setActiveTab] = useState('new');  // 'new', 'inbox', or 'sent'
   const [estimatedCredits, setEstimatedCredits] = useState(0);
   const [grades, setGrades] = useState(['all']);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [inboxMessages, setInboxMessages] = useState([]);
+  const [isLoadingInbox, setIsLoadingInbox] = useState(false);
+  const [credits, setCredits] = useState(0);
+  const [isLoadingSent, setIsLoadingSent] = useState(false);
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
   useEffect(() => {
     fetchContacts();
     fetchSentMessages();
+    fetchCredits();
   }, []);
 
   const fetchContacts = async () => {
@@ -91,17 +97,25 @@ function Messages() {
   };
 
   const fetchSentMessages = async () => {
+    setIsLoadingSent(true);
+    setError(null);
     try {
-      const messagesRef = collection(db, 'schools', SCHOOL_ID, 'messages');
-      const q = query(messagesRef, orderBy('sentAt', 'desc'), limit(50));
-      const querySnapshot = await getDocs(q);
-      const messagesList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setSentMessages(messagesList);
+      const response = await fetch('http://localhost:3000/api/sent-messages');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sent messages: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch sent messages');
+      }
+
+      setSentMessages(data.messages);
     } catch (error) {
-      setError('Error fetching message history: ' + error.message);
+      console.error('Error fetching sent messages:', error);
+      setError(`Failed to fetch sent messages: ${error.message}`);
+    } finally {
+      setIsLoadingSent(false);
     }
   };
 
@@ -175,6 +189,8 @@ function Messages() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setShowSuccess(false);
+    setIsLoading(true);
 
     if (!message.trim()) {
       setError('Please enter a message');
@@ -186,39 +202,27 @@ function Messages() {
       return;
     }
 
-    setIsLoading(true);
     try {
-      // Create message record in Firestore
-      const messagesRef = collection(db, 'schools', SCHOOL_ID, 'messages');
-      const messageDocRef = await addDoc(messagesRef, {
-        message: message.trim(),
-        recipients: previewRecipients,
-        sentAt: new Date(),
-        status: 'sending',
-        selectedGrade: selectedGrade,
-        selectedContact: selectedContact,
-        totalRecipients: previewRecipients.length,
-        deliveredCount: 0,
-        failedCount: 0
-      });
-
-      // Send messages using Zoom Connect
-      const result = await sendZoomConnectSMS(previewRecipients, message.trim());
-
-      // Update message status using updateDoc
-      await updateDoc(messageDocRef, {
-        status: 'delivered',
-        deliveredCount: previewRecipients.length,
-        updatedAt: new Date()
-      });
-
+      const result = await sendZoomConnectSMS(previewRecipients, message);
+      console.log('SMS sent successfully:', result);
+      
+      // Refresh credits after sending messages
+      await fetchCredits();
+      
+      // Show success message
+      setShowSuccess(true);
+      
+      // Clear form
       setMessage('');
-      setShowHistory(true);
-      await fetchSentMessages();
+      
+      // Hide success message after 5 seconds
+      setTimeout(() => {
+        setShowSuccess(false);
+      }, 5000);
 
     } catch (error) {
-      console.error('Error sending message:', error);
-      setError(error.message || 'Failed to send message');
+      console.error('Failed to send SMS:', error);
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }
@@ -302,13 +306,71 @@ function Messages() {
     }
   };
 
+  const fetchInboxMessages = async () => {
+    setIsLoadingInbox(true);
+    setError(null);
+    try {
+      console.log('Fetching inbox messages...');
+      const response = await fetch('http://localhost:3000/api/get-messages');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch inbox messages: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Inbox messages response:', data);
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch inbox messages');
+      }
+
+      setInboxMessages(data.messages);
+    } catch (error) {
+      console.error('Error fetching inbox:', error);
+      setError(`Failed to fetch inbox messages: ${error.message}`);
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'inbox') {
+      fetchInboxMessages();
+    }
+  }, [activeTab]);
+
+  const fetchCredits = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/balance');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch balance: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch balance');
+      }
+      
+      setCredits(data.balance);
+    } catch (error) {
+      console.error('Error fetching credits:', error);
+      // Optionally set an error state here
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'sent') {
+      fetchSentMessages();
+    }
+  }, [activeTab]);
+
   return (
     <div className="p-4 md:p-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Messages</h1>
         <div className="text-sm text-gray-600">
-          Credits: <span className="font-medium">386</span>
+          Credits: <span className="font-medium">{credits}</span>
         </div>
       </div>
 
@@ -341,6 +403,13 @@ function Messages() {
         <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2 mb-6">
           <AlertCircle className="w-4 h-4" />
           {error}
+        </div>
+      )}
+
+      {showSuccess && (
+        <div className="mb-6 p-4 rounded-lg bg-green-50 text-green-700 flex items-center gap-2">
+          <FaCheck className="w-5 h-5" />
+          <span>Messages sent successfully to {previewRecipients.length} recipients!</span>
         </div>
       )}
 
@@ -459,14 +528,130 @@ function Messages() {
       )}
 
       {activeTab === 'inbox' && (
-        <Card className="divide-y divide-gray-100">
-          <div className="p-8 text-center">
-            <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-            <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
-            <p className="text-sm text-gray-500">
-              Your inbox is currently empty
-            </p>
-          </div>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={fetchInboxMessages}
+                disabled={isLoadingInbox}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingInbox ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <div className="mb-4 p-4 rounded-lg bg-red-50 text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                <span>{error}</span>
+              </div>
+            )}
+            
+            {isLoadingInbox ? (
+              <div className="flex items-center justify-center py-8">
+                <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
+              </div>
+            ) : inboxMessages.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {inboxMessages.map((msg, index) => (
+                  <div key={msg.messageId || index} className="py-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          From: {msg.sender}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          msg.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                          msg.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {msg.status}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(msg.receivedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600">{msg.message}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
+                <p className="text-sm text-gray-500">
+                  Your inbox is currently empty
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'sent' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Sent Messages</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchSentMessages}
+                disabled={isLoadingSent}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingSent ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoadingSent ? (
+              <div className="flex items-center justify-center py-8">
+                <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
+              </div>
+            ) : sentMessages.length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {sentMessages.map((msg) => (
+                  <div key={msg.id} className="py-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          To: {msg.recipient}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          msg.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                          msg.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {msg.status}
+                        </span>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        {new Date(msg.sentAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600">{msg.message}</p>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Credits used: {msg.credits}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Send className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
+                <p className="text-sm text-gray-500">
+                  You haven't sent any messages yet
+                </p>
+              </div>
+            )}
+          </CardContent>
         </Card>
       )}
     </div>

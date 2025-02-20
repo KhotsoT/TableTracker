@@ -90,6 +90,93 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Update the get-messages endpoint with the correct URL
+app.get('/api/get-messages', async (req, res) => {
+  try {
+    console.log('Fetching messages from Zoom Connect...');
+    
+    const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/received/', {  // Added trailing slash
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'email': process.env.ZOOM_CONNECT_EMAIL,
+        'token': process.env.ZOOM_CONNECT_KEY
+      }
+    });
+
+    const responseText = await response.text();
+    console.log('Zoom Connect Response:', {
+      status: response.status,
+      body: responseText
+    });
+
+    if (!response.ok) {
+      throw new Error(`API responded with status ${response.status}: ${responseText}`);
+    }
+
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('Failed to parse JSON response:', responseText);
+      throw new Error('Invalid JSON response from API');
+    }
+
+    console.log('Parsed response data:', data);
+    
+    res.json({
+      success: true,
+      messages: data.messages || [] // Expect messages array in response
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Add the balance endpoint
+app.get('/api/balance', async (req, res) => {
+  try {
+    // Build URL with query parameters
+    const params = new URLSearchParams({
+      email: process.env.ZOOM_CONNECT_EMAIL,
+      token: process.env.ZOOM_CONNECT_KEY
+    });
+    
+    const url = `https://www.zoomconnect.com/app/api/rest/v1/account/balance?${params}`;
+    console.log('Fetching balance from:', url.replace(process.env.ZOOM_CONNECT_KEY, '***'));
+
+    const response = await fetch(url);
+    const responseText = await response.text();
+    
+    console.log('Balance API Response:', {
+      status: response.status,
+      body: responseText
+    });
+
+    if (!response.ok) {
+      throw new Error(`API responded with status ${response.status}: ${responseText}`);
+    }
+
+    const data = JSON.parse(responseText);
+    
+    res.json({
+      success: true,
+      balance: data.creditBalance || 0
+    });
+  } catch (error) {
+    console.error('Error fetching balance:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
