@@ -56,12 +56,17 @@ function Dashboard() {
       
       console.log('Devices from collection:', devices)
       
+      // Fetch SMS balance first
+      const smsBalance = await getSMSBalance()
+      console.log('Fetched SMS balance:', smsBalance)
+      
+      // Update all stats at once
       setStats({
         totalTablets: devices.length,
         activeTablets: devices.length, // For now all devices are considered active
         totalStudents,
-        smsCredit: await getSMSBalance(),
-        activeDevices: devices.length
+        activeDevices: devices.length,
+        smsCredit: smsBalance  // Make sure SMS balance is included here
       })
       
       // Fetch alerts
@@ -79,7 +84,7 @@ function Dashboard() {
       
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
-      setError('Failed to load dashboard data')
+      setError(error.message)
     } finally {
       setIsLoading(false)
     }
@@ -114,8 +119,6 @@ function Dashboard() {
             >
               <div className="hidden sm:flex items-center gap-4 text-sm text-gray-500">
                 <span>{new Date().toLocaleDateString()}</span>
-                <span>•</span>
-                <span>Credits: {stats.smsCredit}</span>
               </div>
             </PageHeader>
           </div>
@@ -130,17 +133,23 @@ function Dashboard() {
           <Card className="bg-white overflow-hidden">
             <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-purple-50">
-                  <Wallet className="w-6 h-6 text-purple-600" />
+                <div className="p-3 rounded-xl bg-green-50">
+                  <Wallet className="w-6 h-6 text-green-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">SMS Credits</p>
-                  <p className="text-2xl font-semibold text-gray-900">{stats.smsCredit}</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {isLoading ? (
+                      <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                    ) : (
+                      stats.smsCredit || '0'
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
-            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-purple-50 border-t border-purple-100">
-              <span className="text-sm text-purple-600">Available for messages</span>
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
+              <span className="text-sm text-green-600">Available for messages</span>
             </div>
           </Card>
 

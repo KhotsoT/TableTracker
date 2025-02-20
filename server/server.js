@@ -168,9 +168,7 @@ app.get('/api/balance', async (req, res) => {
     }
 
     const data = JSON.parse(responseText);
-    console.log('Parsed balance data:', data);
-
-    // The API returns creditBalance directly
+    
     res.json({
       success: true,
       balance: data.creditBalance

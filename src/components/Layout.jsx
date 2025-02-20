@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils"
+import { useState, useEffect } from 'react';
+import { getSMSBalance } from '../services/smsService';
 
 export function PageHeader({ 
   title, 
@@ -13,11 +15,13 @@ export function PageHeader({
           <p className="mt-0.5 sm:mt-1 text-sm text-gray-500 line-clamp-1">{subtitle}</p>
         )}
       </div>
-      {children && (
-        <div className="flex items-center gap-3 mt-2 sm:mt-0">
-          {children}
-        </div>
-      )}
+      <div className="flex items-center gap-4">
+        {children && (
+          <div className="flex items-center gap-3 mt-2 sm:mt-0">
+            {children}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
