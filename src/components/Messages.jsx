@@ -625,21 +625,32 @@ function Messages() {
                 {sentMessages.map((msg) => (
                   <div 
                     key={msg.id} 
-                    className="py-4 hover:bg-gray-50 cursor-pointer transition-colors" 
-                    onClick={() => handleMessageClick(msg)}
+                    className="py-4 hover:bg-gray-50 cursor-pointer transition-colors px-4" 
+                    onClick={() => setSelectedMessage(msg)}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-gray-500" />
                         <span className="text-sm font-medium text-gray-900">
-                          To: {msg.recipient}
+                          {msg.totalRecipients} recipient{msg.totalRecipients !== 1 ? 's' : ''}
                         </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          msg.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                          msg.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {msg.status}
-                        </span>
+                        <div className="flex gap-1">
+                          {msg.status.delivered > 0 && (
+                            <span className="px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-full">
+                              {msg.status.delivered} delivered
+                            </span>
+                          )}
+                          {msg.status.failed > 0 && (
+                            <span className="px-2 py-0.5 text-xs bg-red-50 text-red-700 rounded-full">
+                              {msg.status.failed} failed
+                            </span>
+                          )}
+                          {msg.status.pending > 0 && (
+                            <span className="px-2 py-0.5 text-xs bg-yellow-50 text-yellow-700 rounded-full">
+                              {msg.status.pending} pending
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span className="text-sm text-gray-500">
                         {new Date(msg.sentAt).toLocaleString()}
@@ -647,7 +658,7 @@ function Messages() {
                     </div>
                     <p className="text-sm text-gray-600">{msg.message}</p>
                     <div className="mt-2 text-xs text-gray-500">
-                      Credits used: {msg.credits}
+                      Credits used: {msg.totalCredits}
                     </div>
                   </div>
                 ))}
@@ -674,43 +685,46 @@ function Messages() {
             
             <div className="grid gap-6 py-4">
               <div className="grid gap-2">
-                <label className="text-sm font-medium text-gray-500">Recipient</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
-                  {selectedMessage.recipient}
-                </div>
-              </div>
-
-              <div className="grid gap-2">
                 <label className="text-sm font-medium text-gray-500">Message</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900 whitespace-pre-wrap min-h-[60px]">
+                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900 whitespace-pre-wrap">
                   {selectedMessage.message}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <label className="text-sm font-medium text-gray-500">Status</label>
-                  <div className={`inline-flex items-center justify-center px-2.5 py-1.5 rounded-full text-xs font-medium w-fit ${
-                    selectedMessage.status === 'delivered' ? 'bg-green-100 text-green-800 border border-green-200' :
-                    selectedMessage.status === 'failed' ? 'bg-red-100 text-red-800 border border-red-200' :
-                    'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                  }`}>
-                    {selectedMessage.status.charAt(0).toUpperCase() + selectedMessage.status.slice(1)}
-                  </div>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-gray-500">
+                  Recipients ({selectedMessage.totalRecipients})
+                </label>
+                <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto rounded-lg border border-gray-200">
+                  {selectedMessage.recipients.map((recipient, index) => (
+                    <div key={index} className="p-3 bg-white hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-900">{recipient.number}</span>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          recipient.status === 'delivered' ? 'bg-green-100 text-green-800 border border-green-200' :
+                          recipient.status === 'failed' ? 'bg-red-100 text-red-800 border border-red-200' :
+                          'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                        }`}>
+                          {recipient.status}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                
-                <div className="grid gap-2">
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="text-sm font-medium text-gray-500">Sent At</label>
                   <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
                     {new Date(selectedMessage.sentAt).toLocaleString()}
                   </div>
                 </div>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-gray-500">Credits Used</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
-                  {selectedMessage.credits}
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Total Credits</label>
+                  <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
+                    {selectedMessage.totalCredits}
+                  </div>
                 </div>
               </div>
             </div>

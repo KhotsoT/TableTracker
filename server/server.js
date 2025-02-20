@@ -182,15 +182,10 @@ app.get('/api/balance', async (req, res) => {
   }
 });
 
-// Add sent messages endpoint
+// Update the sent-messages endpoint to group messages
 app.get('/api/sent-messages', async (req, res) => {
   try {
-    const params = new URLSearchParams({
-      type: 'OUTBOUND',
-      page: '1'
-    });
-    
-    const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?${params}`, {
+    const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=1', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -201,26 +196,51 @@ app.get('/api/sent-messages', async (req, res) => {
     });
 
     const responseText = await response.text();
-    console.log('Sent Messages API Response:', {
-      status: response.status,
-      body: responseText
-    });
-
     if (!response.ok) {
       throw new Error(`API responded with status ${response.status}: ${responseText}`);
     }
 
     const data = JSON.parse(responseText);
     
-    // Transform the response to match our frontend expectations
-    const messages = (data.webServiceMessages || []).map(msg => ({
-      id: msg.messageId,
-      recipient: msg.toNumber,
-      message: msg.message,
-      sentAt: msg.dateTimeSent,
-      status: msg.messageStatus?.toLowerCase() || 'sent',
-      credits: msg.creditCost || 1
-    }));
+    // Group messages by content and time (within same minute)
+    const groupedMessages = (data.webServiceMessages || []).reduce((groups, msg) => {
+      const messageTime = new Date(msg.dateTimeSent).getTime();
+      const key = `${msg.message}_${Math.floor(messageTime / 60000)}`; // Group by message and minute
+
+      if (!groups[key]) {
+        groups[key] = {
+          id: msg.messageId,
+          message: msg.message,
+          sentAt: msg.dateTimeSent,
+          recipients: [],
+          totalRecipients: 0,
+          totalCredits: 0,
+          status: {
+            delivered: 0,
+            failed: 0,
+            pending: 0
+          }
+        };
+      }
+
+      // Add recipient
+      groups[key].recipients.push({
+        number: msg.toNumber,
+        status: msg.messageStatus?.toLowerCase() || 'pending',
+        credits: msg.creditCost || 1
+      });
+
+      // Update counters
+      groups[key].totalRecipients++;
+      groups[key].totalCredits += (msg.creditCost || 1);
+      groups[key].status[msg.messageStatus?.toLowerCase() || 'pending']++;
+
+      return groups;
+    }, {});
+
+    // Convert to array and sort by date
+    const messages = Object.values(groupedMessages)
+      .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
 
     res.json({
       success: true,
