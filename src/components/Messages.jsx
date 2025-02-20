@@ -22,6 +22,7 @@ import {
   Home,
   AlertCircle
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 function Messages() {
   const [contacts, setContacts] = useState([]);
@@ -41,6 +42,7 @@ function Messages() {
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [credits, setCredits] = useState(0);
   const [isLoadingSent, setIsLoadingSent] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
@@ -364,6 +366,10 @@ function Messages() {
     }
   }, [activeTab]);
 
+  const handleMessageClick = (message) => {
+    setSelectedMessage(message);
+  };
+
   return (
     <div className="p-4 md:p-6">
       {/* Header */}
@@ -617,7 +623,11 @@ function Messages() {
             ) : sentMessages.length > 0 ? (
               <div className="divide-y divide-gray-100">
                 {sentMessages.map((msg) => (
-                  <div key={msg.id} className="py-4">
+                  <div 
+                    key={msg.id} 
+                    className="py-4 hover:bg-gray-50 cursor-pointer transition-colors" 
+                    onClick={() => handleMessageClick(msg)}
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-900">
@@ -653,6 +663,59 @@ function Messages() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {selectedMessage && (
+        <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader className="border-b pb-4">
+              <DialogTitle className="text-xl">Message Details</DialogTitle>
+            </DialogHeader>
+            
+            <div className="grid gap-6 py-4">
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-gray-500">Recipient</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
+                  {selectedMessage.recipient}
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-gray-500">Message</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900 whitespace-pre-wrap min-h-[60px]">
+                  {selectedMessage.message}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-gray-500">Status</label>
+                  <div className={`inline-flex items-center justify-center px-2.5 py-1.5 rounded-full text-xs font-medium w-fit ${
+                    selectedMessage.status === 'delivered' ? 'bg-green-100 text-green-800 border border-green-200' :
+                    selectedMessage.status === 'failed' ? 'bg-red-100 text-red-800 border border-red-200' :
+                    'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                  }`}>
+                    {selectedMessage.status.charAt(0).toUpperCase() + selectedMessage.status.slice(1)}
+                  </div>
+                </div>
+                
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium text-gray-500">Sent At</label>
+                  <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
+                    {new Date(selectedMessage.sentAt).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-medium text-gray-500">Credits Used</label>
+                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
+                  {selectedMessage.credits}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
