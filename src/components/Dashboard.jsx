@@ -12,6 +12,7 @@ function Dashboard() {
     activeTablets: 0,
     totalStudents: 0,
     smsCredit: 0,
+    activeDevices: 0
   })
 
   const [schoolInfo, setSchoolInfo] = useState({
@@ -59,7 +60,8 @@ function Dashboard() {
         totalTablets: devices.length,
         activeTablets: devices.length, // For now all devices are considered active
         totalStudents,
-        smsCredit: await getSMSBalance()
+        smsCredit: await getSMSBalance(),
+        activeDevices: devices.length
       })
       
       // Fetch alerts

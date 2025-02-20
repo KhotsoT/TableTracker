@@ -209,10 +209,7 @@ function Messages() {
       // Refresh credits after sending messages
       await fetchCredits();
       
-      // Show success message
       setShowSuccess(true);
-      
-      // Clear form
       setMessage('');
       
       // Hide success message after 5 seconds
@@ -341,20 +338,23 @@ function Messages() {
 
   const fetchCredits = async () => {
     try {
+      setError(null);
       const response = await fetch('http://localhost:3000/api/balance');
       if (!response.ok) {
         throw new Error(`Failed to fetch balance: ${response.status}`);
       }
       
       const data = await response.json();
+      console.log('Credits response:', data);
+      
       if (!data.success) {
         throw new Error(data.error || 'Failed to fetch balance');
       }
       
-      setCredits(data.balance);
+      setCredits(data.balance || 0);
     } catch (error) {
       console.error('Error fetching credits:', error);
-      // Optionally set an error state here
+      setError('Failed to fetch SMS credits');
     }
   };
 
@@ -369,7 +369,7 @@ function Messages() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Messages</h1>
-        <div className="text-sm text-gray-600">
+        <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
           Credits: <span className="font-medium">{credits}</span>
         </div>
       </div>

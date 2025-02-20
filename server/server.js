@@ -90,12 +90,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Update the get-messages endpoint with the correct URL
+// Update the get-messages endpoint to use the correct URL for inbox messages
 app.get('/api/get-messages', async (req, res) => {
   try {
     console.log('Fetching messages from Zoom Connect...');
     
-    const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/received/', {  // Added trailing slash
+    const params = new URLSearchParams({
+      type: 'INBOUND',
+      page: '1'
+    });
+    
+    const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?${params}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -106,54 +111,7 @@ app.get('/api/get-messages', async (req, res) => {
     });
 
     const responseText = await response.text();
-    console.log('Zoom Connect Response:', {
-      status: response.status,
-      body: responseText
-    });
-
-    if (!response.ok) {
-      throw new Error(`API responded with status ${response.status}: ${responseText}`);
-    }
-
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      console.error('Failed to parse JSON response:', responseText);
-      throw new Error('Invalid JSON response from API');
-    }
-
-    console.log('Parsed response data:', data);
-    
-    res.json({
-      success: true,
-      messages: data.messages || [] // Expect messages array in response
-    });
-  } catch (error) {
-    console.error('Error fetching messages:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Add the balance endpoint
-app.get('/api/balance', async (req, res) => {
-  try {
-    // Build URL with query parameters
-    const params = new URLSearchParams({
-      email: process.env.ZOOM_CONNECT_EMAIL,
-      token: process.env.ZOOM_CONNECT_KEY
-    });
-    
-    const url = `https://www.zoomconnect.com/app/api/rest/v1/account/balance?${params}`;
-    console.log('Fetching balance from:', url.replace(process.env.ZOOM_CONNECT_KEY, '***'));
-
-    const response = await fetch(url);
-    const responseText = await response.text();
-    
-    console.log('Balance API Response:', {
+    console.log('Messages API Response:', {
       status: response.status,
       body: responseText
     });
@@ -164,12 +122,114 @@ app.get('/api/balance', async (req, res) => {
 
     const data = JSON.parse(responseText);
     
+    // Transform the response to match our frontend expectations
+    const messages = (data.webServiceMessages || []).map(msg => ({
+      messageId: msg.messageId,
+      sender: msg.fromNumber,
+      message: msg.message,
+      receivedAt: msg.dateTimeReceived,
+      status: msg.messageStatus?.toLowerCase() || 'received'
+    }));
+
     res.json({
       success: true,
-      balance: data.creditBalance || 0
+      messages
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update the balance endpoint to properly parse and return the credit balance
+app.get('/api/balance', async (req, res) => {
+  try {
+    const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/account/balance', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'email': process.env.ZOOM_CONNECT_EMAIL,
+        'token': process.env.ZOOM_CONNECT_KEY
+      }
+    });
+
+    const responseText = await response.text();
+    console.log('Balance API Response:', {
+      status: response.status,
+      body: responseText
+    });
+
+    if (!response.ok) {
+      throw new Error(`API responded with status ${response.status}: ${responseText}`);
+    }
+
+    const data = JSON.parse(responseText);
+    console.log('Parsed balance data:', data);
+
+    // The API returns creditBalance directly
+    res.json({
+      success: true,
+      balance: data.creditBalance
     });
   } catch (error) {
     console.error('Error fetching balance:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Add sent messages endpoint
+app.get('/api/sent-messages', async (req, res) => {
+  try {
+    const params = new URLSearchParams({
+      type: 'OUTBOUND',
+      page: '1'
+    });
+    
+    const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?${params}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'email': process.env.ZOOM_CONNECT_EMAIL,
+        'token': process.env.ZOOM_CONNECT_KEY
+      }
+    });
+
+    const responseText = await response.text();
+    console.log('Sent Messages API Response:', {
+      status: response.status,
+      body: responseText
+    });
+
+    if (!response.ok) {
+      throw new Error(`API responded with status ${response.status}: ${responseText}`);
+    }
+
+    const data = JSON.parse(responseText);
+    
+    // Transform the response to match our frontend expectations
+    const messages = (data.webServiceMessages || []).map(msg => ({
+      id: msg.messageId,
+      recipient: msg.toNumber,
+      message: msg.message,
+      sentAt: msg.dateTimeSent,
+      status: msg.messageStatus?.toLowerCase() || 'sent',
+      credits: msg.creditCost || 1
+    }));
+
+    res.json({
+      success: true,
+      messages
+    });
+  } catch (error) {
+    console.error('Error fetching sent messages:', error);
     res.status(500).json({
       success: false,
       error: error.message
