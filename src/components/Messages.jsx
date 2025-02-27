@@ -23,6 +23,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { toast } from "./ui/use-toast";
 
 function Messages() {
   const [contacts, setContacts] = useState([]);
@@ -368,6 +369,44 @@ function Messages() {
 
   const handleMessageClick = (message) => {
     setSelectedMessage(message);
+  };
+
+  const handleResendFailed = async (message) => {
+    try {
+      const failedRecipients = message.recipients.filter(r => r.status === 'failed');
+      if (failedRecipients.length === 0) return;
+
+      const response = await fetch('http://localhost:3000/api/resend-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message.message,
+          recipients: failedRecipients.map(r => r.number)
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+
+      toast({
+        title: "Messages Queued",
+        description: `Resending to ${failedRecipients.length} failed recipient(s)`,
+        variant: "success"
+      });
+
+      // Refresh messages list
+      fetchSentMessages();
+      
+    } catch (error) {
+      console.error('Error resending messages:', error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -735,6 +774,17 @@ function Messages() {
                   </div>
                 </div>
               </div>
+
+              {selectedMessage.status.failed > 0 && (
+                <div className="border-t pt-4">
+                  <Button 
+                    onClick={() => handleResendFailed(selectedMessage)}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    Resend to {selectedMessage.status.failed} Failed Recipient{selectedMessage.status.failed !== 1 ? 's' : ''}
+                  </Button>
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { Upload, Download, FileSpreadsheet, Trash2, AlertCircle } from 'lucide-react'
+import { Upload, Download, FileSpreadsheet, Trash2, AlertCircle, X, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
 import { db, SCHOOL_ID } from '../config/firebase'
-import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc, updateDoc } from 'firebase/firestore'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
 import { 
@@ -16,6 +16,12 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog"
 import { toast } from "./ui/use-toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog"
 
 // Add this function before the Contacts component
 const formatPhoneNumber = (number) => {
@@ -48,6 +54,10 @@ function Contacts() {
   const [error, setError] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, contactId: null })
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('all');
+  const [importResults, setImportResults] = useState(null);
+  const [editContact, setEditContact] = useState(null);
 
   // Fetch contacts on component mount
   useEffect(() => {
@@ -175,6 +185,20 @@ function Contacts() {
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const data = XLSX.utils.sheet_to_json(worksheet);
 
+          // Validate basic structure
+          if (!data || data.length === 0) {
+            throw new Error('File is empty or has invalid format');
+          }
+
+          // Validate required columns exist
+          const requiredColumns = ['student_name', 'grade'];
+          const firstRow = data[0];
+          for (const column of requiredColumns) {
+            if (!(column in firstRow)) {
+              throw new Error(`Missing required column: ${column}`);
+            }
+          }
+
           const results = {
             success: 0,
             duplicates: 0,
@@ -282,26 +306,12 @@ function Contacts() {
             await saveContactsToFirestore(validContacts);
           }
 
-          // Show results
-          let message = `Successfully imported ${results.success} contacts.`;
-          if (results.duplicates > 0) {
-            message += `\n${results.duplicates} duplicates skipped.`;
-          }
-          
-          toast({
-            title: "Import Complete",
-            description: message,
-            variant: "success"
+          // Show results in dialog instead of toast
+          setImportResults({
+            success: results.success,
+            duplicates: results.duplicates,
+            errors: results.errors
           });
-
-          // If there were any errors, show them in a separate toast
-          if (results.errors.length > 0) {
-            toast({
-              title: `${results.errors.length} Errors Found`,
-              description: results.errors.join('\n'),
-              variant: "destructive"
-            });
-          }
 
           fetchContacts(); // Refresh the list
 
@@ -403,45 +413,74 @@ function Contacts() {
     return true
   }
 
-  const exportContacts = () => {
-    if (contacts.length === 0) {
-      setError('No contacts to export')
-      return
+  const exportData = () => {
+    try {
+      // Format data to match template structure
+      const formattedData = contacts.map(contact => ({
+        student_name: contact.student_name,
+        grade: contact.grade,
+        device_id: contact.device_id || '',
+        imei_number: contact.imei_number || '',
+        mother_name: contact.mother_name === 'N/A' ? '' : contact.mother_name,
+        mother_contact: contact.mother_contact === 'N/A' ? '' : contact.mother_contact.replace('+27', '0'),
+        father_name: contact.father_name === 'N/A' ? '' : contact.father_name,
+        father_contact: contact.father_contact === 'N/A' ? '' : contact.father_contact.replace('+27', '0'),
+        notes: '' // Optional column for users to add notes during updates
+      }));
+
+      // Create worksheet with the same column widths as template
+      const worksheet = XLSX.utils.json_to_sheet(formattedData);
+      
+      // Set the same column widths as template
+      const wscols = [
+        { wch: 20 }, // student_name
+        { wch: 8 },  // grade
+        { wch: 15 }, // device_id
+        { wch: 20 }, // imei_number
+        { wch: 20 }, // mother_name
+        { wch: 15 }, // mother_contact
+        { wch: 20 }, // father_name
+        { wch: 15 }, // father_contact
+        { wch: 40 }  // notes
+      ];
+      worksheet['!cols'] = wscols;
+
+      // Add header row styling to match template
+      XLSX.utils.sheet_add_aoa(worksheet, [
+        [
+          'student_name',
+          'grade',
+          'device_id',
+          'imei_number',
+          'mother_name',
+          'mother_contact',
+          'father_name',
+          'father_contact',
+          'notes'
+        ]
+      ], { origin: 'A1' });
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
+
+      // Save with current date in filename
+      const date = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(workbook, `student_contacts_${date}.xlsx`);
+
+      toast({
+        title: "Export Successful",
+        description: "Contact list has been exported successfully",
+        variant: "success"
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: "Export Failed",
+        description: error.message,
+        variant: "destructive"
+      });
     }
-
-    // Remove Firestore-specific fields and format IMEI
-    const exportData = contacts.map(({ id, createdAt, updatedAt, ...contact }) => ({
-      ...contact,
-      // Format IMEI as string with leading zeros
-      imei_number: contact.imei_number ? `'${contact.imei_number}` : '' // Adding ' forces Excel to treat it as text
-    }))
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData)
-    const workbook = XLSX.utils.book_new()
-   
-    // Set column width and format for IMEI column
-    const colWidth = [
-      { wch: 20 }, // Student Name
-      { wch: 10 }, // Grade
-      { wch: 15 }, // Device ID
-      { wch: 20 }, // IMEI
-      { wch: 20 }, // Mother's Contact
-      { wch: 20 }, // Father's Contact
-    ]
-    worksheet['!cols'] = colWidth
-   
-    // Format IMEI column as text
-    const range = XLSX.utils.decode_range(worksheet['!ref'])
-    for (let R = range.s.r; R <= range.e.r; ++R) {
-      const imeiCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 3 })]
-      if (imeiCell) {
-        imeiCell.z = '@'
-      }
-    }
-
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts')
-    XLSX.writeFile(workbook, 'student_devices.xlsx')
-  }
+  };
 
   const handleDelete = async (contactId) => {
     try {
@@ -498,6 +537,60 @@ function Contacts() {
     })
   }
 
+  // Add this function to get unique grades from contacts
+  const getUniqueGrades = () => {
+    const grades = new Set(contacts.map(contact => contact.grade));
+    return ['all', ...Array.from(grades).sort()];
+  };
+
+  // Add this function to filter contacts
+  const filteredContacts = contacts.filter(contact => {
+    const matchesSearch = searchTerm === '' || 
+      contact.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.mother_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.father_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.mother_contact.includes(searchTerm) ||
+      contact.father_contact.includes(searchTerm);
+
+    const matchesGrade = selectedGrade === 'all' || contact.grade === selectedGrade;
+
+    return matchesSearch && matchesGrade;
+  });
+
+  // Add function to handle contact update
+  const handleUpdateContact = async (updatedContact) => {
+    try {
+      setIsLoading(true);
+      const contactRef = doc(db, 'schools', SCHOOL_ID, 'contacts', updatedContact.id);
+      
+      await updateDoc(contactRef, {
+        ...updatedContact,
+        updatedAt: new Date()
+      });
+
+      // Update local state
+      setContacts(prev => prev.map(contact => 
+        contact.id === updatedContact.id ? updatedContact : contact
+      ));
+
+      setEditContact(null);
+      toast({
+        title: "Contact Updated",
+        description: "Contact information has been updated successfully",
+        variant: "success"
+      });
+    } catch (error) {
+      console.error('Error updating contact:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update contact",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
@@ -538,7 +631,7 @@ function Contacts() {
           </div>
           <Button 
             variant="outline"
-            onClick={exportContacts}
+            onClick={exportData}
             className="flex items-center gap-2 text-gray-900 bg-blue-50/50 border-0 hover:text-blue-600 transition-colors"
             disabled={contacts.length === 0}
           >
@@ -547,6 +640,38 @@ function Contacts() {
           </Button>
         </div>
       </Card>
+
+      {/* Search and Grade Filter */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <select
+          value={selectedGrade}
+          onChange={(e) => setSelectedGrade(e.target.value)}
+          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+        >
+          {getUniqueGrades().map(grade => (
+            <option key={grade} value={grade}>
+              {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* Contacts Table */}
       <div className="mt-8">
@@ -576,57 +701,78 @@ function Contacts() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {contacts.map((contact, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-sm">
-                      <div className="font-medium text-gray-900">{contact.student_name}</div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                      {contact.grade}
-                    </td>
-                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                      {contact.device_id}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className={`text-sm font-medium ${contact.primary_contact === 'mother' ? 'text-blue-600' : 'text-gray-900'}`}>
-                            {contact.mother_name}
-                            {contact.primary_contact === 'mother' && (
-                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                Primary
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-sm text-gray-500">{contact.mother_contact}</span>
+                {filteredContacts.length > 0 ? (
+                  filteredContacts.map((contact, index) => (
+                    <tr 
+                      key={index} 
+                      className="hover:bg-gray-50 cursor-pointer" 
+                      onClick={() => setEditContact(contact)}
+                    >
+                      <td className="px-4 py-3 whitespace-nowrap text-sm">
+                        <div className="font-medium text-gray-900">{contact.student_name}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                        {contact.grade}
+                      </td>
+                      <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                        {contact.device_id}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className={`text-sm font-medium ${contact.primary_contact === 'mother' ? 'text-blue-600' : 'text-gray-900'}`}>
+                              {contact.mother_name}
+                              {contact.primary_contact === 'mother' && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                  Primary
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-sm text-gray-500">{contact.mother_contact}</span>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className={`text-sm font-medium ${contact.primary_contact === 'father' ? 'text-blue-600' : 'text-gray-900'}`}>
-                            {contact.father_name}
-                            {contact.primary_contact === 'father' && (
-                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                Primary
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-sm text-gray-500">{contact.father_contact}</span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className={`text-sm font-medium ${contact.primary_contact === 'father' ? 'text-blue-600' : 'text-gray-900'}`}>
+                              {contact.father_name}
+                              {contact.primary_contact === 'father' && (
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                  Primary
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-sm text-gray-500">{contact.father_contact}</span>
+                          </div>
                         </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteDialog({ open: true, contactId: contact.id });
+                          }}
+                          className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                      <div className="flex flex-col items-center">
+                        <AlertCircle className="h-8 w-8 text-gray-400 mb-2" />
+                        <p className="text-lg font-medium text-gray-900 mb-1">No contacts found</p>
+                        <p className="text-sm text-gray-500">
+                          {searchTerm ? 'Try adjusting your search' : 'No contacts available'}
+                        </p>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <button 
-                        onClick={() => setDeleteDialog({ open: true, contactId: contact.id })}
-                        className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -656,6 +802,193 @@ function Contacts() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {importResults && (
+        <Dialog open={!!importResults} onOpenChange={() => setImportResults(null)}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Import Results</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="flex flex-col gap-4">
+                {importResults.success > 0 && (
+                  <div className="flex items-center gap-2 text-green-600 bg-green-50 px-4 py-3 rounded-lg">
+                    <CheckCircle className="h-5 w-5" />
+                    <span>{importResults.success} contacts successfully imported</span>
+                  </div>
+                )}
+                
+                {importResults.duplicates > 0 && (
+                  <div className="flex items-center gap-2 text-yellow-600 bg-yellow-50 px-4 py-3 rounded-lg">
+                    <AlertTriangle className="h-5 w-5" />
+                    <span>{importResults.duplicates} duplicate entries skipped</span>
+                  </div>
+                )}
+
+                {importResults.errors.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-red-600">
+                      <XCircle className="h-5 w-5" />
+                      <span className="font-medium">Errors found:</span>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-4 max-h-[200px] overflow-y-auto">
+                      <ul className="list-disc list-inside space-y-1">
+                        {importResults.errors.map((error, index) => (
+                          <li key={index} className="text-red-600 text-sm">{error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end pt-4 border-t">
+              <Button onClick={() => setImportResults(null)}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {editContact && (
+        <Dialog open={!!editContact} onOpenChange={() => setEditContact(null)}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Edit Contact</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleUpdateContact(editContact);
+            }}>
+              <div className="grid gap-6 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">Student Name</label>
+                    <input
+                      type="text"
+                      value={editContact.student_name}
+                      onChange={(e) => setEditContact({
+                        ...editContact,
+                        student_name: e.target.value
+                      })}
+                      className="w-full px-3 py-2 border rounded-md"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">Grade</label>
+                    <input
+                      type="text"
+                      value={editContact.grade}
+                      onChange={(e) => setEditContact({
+                        ...editContact,
+                        grade: e.target.value.toUpperCase()
+                      })}
+                      className="w-full px-3 py-2 border rounded-md"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Device ID</label>
+                  <input
+                    type="text"
+                    value={editContact.device_id}
+                    onChange={(e) => setEditContact({
+                      ...editContact,
+                      device_id: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border rounded-md"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Mother's Name</label>
+                      <input
+                        type="text"
+                        value={editContact.mother_name}
+                        onChange={(e) => setEditContact({
+                          ...editContact,
+                          mother_name: e.target.value
+                        })}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Mother's Contact</label>
+                      <input
+                        type="text"
+                        value={editContact.mother_contact}
+                        onChange={(e) => setEditContact({
+                          ...editContact,
+                          mother_contact: e.target.value
+                        })}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Father's Name</label>
+                      <input
+                        type="text"
+                        value={editContact.father_name}
+                        onChange={(e) => setEditContact({
+                          ...editContact,
+                          father_name: e.target.value
+                        })}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Father's Contact</label>
+                      <input
+                        type="text"
+                        value={editContact.father_contact}
+                        onChange={(e) => setEditContact({
+                          ...editContact,
+                          father_contact: e.target.value
+                        })}
+                        className="w-full px-3 py-2 border rounded-md"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Primary Contact</label>
+                  <select
+                    value={editContact.primary_contact}
+                    onChange={(e) => setEditContact({
+                      ...editContact,
+                      primary_contact: e.target.value
+                    })}
+                    className="w-full px-3 py-2 border rounded-md"
+                    required
+                  >
+                    <option value="mother">Mother</option>
+                    <option value="father">Father</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-4 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => setEditContact(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Save Changes
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {isLoading && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center">

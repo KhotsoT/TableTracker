@@ -283,6 +283,58 @@ app.get('/api/sent-messages', async (req, res) => {
   }
 });
 
+// Add new endpoint to handle resending failed messages
+app.post('/api/resend-message', async (req, res) => {
+  try {
+    const { message, recipients } = req.body;
+    
+    // Send messages one at a time as per API requirements
+    const results = [];
+    for (const recipientNumber of recipients) {
+      const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        },
+        body: JSON.stringify({
+          recipientNumber,
+          message
+        })
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(`Failed to send SMS: ${response.status} - ${responseText}`);
+      }
+
+      try {
+        const result = JSON.parse(responseText);
+        results.push(result);
+      } catch (e) {
+        results.push({ status: 'sent', raw: responseText });
+      }
+
+      // Add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    res.json({
+      success: true,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error resending messages:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
