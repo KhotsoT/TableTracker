@@ -182,30 +182,59 @@ app.get('/api/balance', async (req, res) => {
   }
 });
 
-// Update the sent-messages endpoint to group messages
+// Update the sent-messages endpoint with better pagination and logging
 app.get('/api/sent-messages', async (req, res) => {
   try {
-    const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=1', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'email': process.env.ZOOM_CONNECT_EMAIL,
-        'token': process.env.ZOOM_CONNECT_KEY
-      }
-    });
+    let allMessages = [];
+    let currentPage = 1;
+    let hasMoreMessages = true;
+    
+    console.log('Starting to fetch messages...');
 
-    const responseText = await response.text();
-    if (!response.ok) {
-      throw new Error(`API responded with status ${response.status}: ${responseText}`);
+    // Fetch messages until we get an empty page
+    while (hasMoreMessages) {
+      console.log(`Fetching page ${currentPage}...`);
+      
+      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        }
+      });
+
+      const responseText = await response.text();
+      console.log(`Page ${currentPage} response:`, responseText.substring(0, 200) + '...'); // Log first 200 chars
+
+      if (!response.ok) {
+        throw new Error(`API responded with status ${response.status}: ${responseText}`);
+      }
+
+      const data = JSON.parse(responseText);
+      const messages = data.webServiceMessages || [];
+      
+      console.log(`Found ${messages.length} messages on page ${currentPage}`);
+      
+      if (messages.length === 0) {
+        hasMoreMessages = false;
+        console.log('No more messages found');
+      } else {
+        allMessages = [...allMessages, ...messages];
+        currentPage++;
+      }
+
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    const data = JSON.parse(responseText);
-    
+    console.log(`Total messages fetched: ${allMessages.length}`);
+
     // Group messages by content and time (within same minute)
-    const groupedMessages = (data.webServiceMessages || []).reduce((groups, msg) => {
+    const groupedMessages = allMessages.reduce((groups, msg) => {
       const messageTime = new Date(msg.dateTimeSent).getTime();
-      const key = `${msg.message}_${Math.floor(messageTime / 60000)}`; // Group by message and minute
+      const key = `${msg.message}_${Math.floor(messageTime / 60000)}`;
 
       if (!groups[key]) {
         groups[key] = {
@@ -223,14 +252,12 @@ app.get('/api/sent-messages', async (req, res) => {
         };
       }
 
-      // Add recipient
       groups[key].recipients.push({
         number: msg.toNumber,
         status: msg.messageStatus?.toLowerCase() || 'pending',
         credits: msg.creditCost || 1
       });
 
-      // Update counters
       groups[key].totalRecipients++;
       groups[key].totalCredits += (msg.creditCost || 1);
       groups[key].status[msg.messageStatus?.toLowerCase() || 'pending']++;
@@ -238,9 +265,10 @@ app.get('/api/sent-messages', async (req, res) => {
       return groups;
     }, {});
 
-    // Convert to array and sort by date
     const messages = Object.values(groupedMessages)
       .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+
+    console.log(`Grouped into ${messages.length} unique messages`);
 
     res.json({
       success: true,

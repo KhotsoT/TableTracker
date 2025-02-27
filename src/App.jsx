@@ -11,6 +11,7 @@ import Settings from './components/Settings'
 import Sidebar from './components/Sidebar'
 import Login from './components/Login'
 import './App.css'
+import { Toaster } from "sonner"
 
 function App() {
   const handleLogout = async () => {
@@ -24,20 +25,23 @@ function App() {
   }
 
   return (
-    <Router>
-      <div className="flex h-screen bg-gray-100">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto ml-64">
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/contacts" element={<Contacts />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/tracking" element={<DeviceTracking />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <>
+      <Toaster />
+      <Router>
+        <div className="flex h-screen bg-gray-100">
+          <Sidebar />
+          <main className="flex-1 overflow-y-auto ml-64">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/contacts" element={<Contacts />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/tracking" element={<DeviceTracking />} />
+            </Routes>
+          </main>
+        </div>
+      </Router>
+    </>
   )
 }
 

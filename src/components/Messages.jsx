@@ -678,12 +678,15 @@ function Messages() {
 
       {selectedMessage && (
         <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent 
+            className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col"
+            aria-describedby="message-description"
+          >
             <DialogHeader className="border-b pb-4">
-              <DialogTitle className="text-xl">Message Details</DialogTitle>
+              <DialogTitle>Message Details</DialogTitle>
             </DialogHeader>
             
-            <div className="grid gap-6 py-4">
+            <div className="grid gap-6 py-4 overflow-y-auto flex-1" id="message-description">
               <div className="grid gap-2">
                 <label className="text-sm font-medium text-gray-500">Message</label>
                 <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900 whitespace-pre-wrap">
@@ -695,11 +698,16 @@ function Messages() {
                 <label className="text-sm font-medium text-gray-500">
                   Recipients ({selectedMessage.totalRecipients})
                 </label>
-                <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto rounded-lg border border-gray-200">
+                <div className="divide-y divide-gray-100 max-h-[40vh] overflow-y-auto rounded-lg border border-gray-200">
                   {selectedMessage.recipients.map((recipient, index) => (
                     <div key={index} className="p-3 bg-white hover:bg-gray-50">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-900">{recipient.number}</span>
+                        <div className="flex flex-col">
+                          <span className="text-sm text-gray-900">
+                            {recipient.name} {recipient.surname}
+                          </span>
+                          <span className="text-xs text-gray-500">{recipient.number}</span>
+                        </div>
                         <div className={`px-2 py-1 rounded-full text-xs font-medium ${
                           recipient.status === 'delivered' ? 'bg-green-100 text-green-800 border border-green-200' :
                           recipient.status === 'failed' ? 'bg-red-100 text-red-800 border border-red-200' :
@@ -713,7 +721,7 @@ function Messages() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 mt-auto pt-4 border-t">
                 <div>
                   <label className="text-sm font-medium text-gray-500">Sent At</label>
                   <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">

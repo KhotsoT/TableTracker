@@ -15,6 +15,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./ui/alert-dialog"
+import { toast } from "./ui/use-toast"
+
+// Add this function before the Contacts component
+const formatPhoneNumber = (number) => {
+  // Remove any non-digit characters
+  const cleaned = number.toString().replace(/\D/g, '');
+  
+  // Handle different formats
+  if (cleaned.length === 9) {
+    return `+27${cleaned}`;
+  }
+  if (cleaned.length === 10 && cleaned.startsWith('0')) {
+    return `+27${cleaned.slice(1)}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('27')) {
+    return `+${cleaned}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('270')) {
+    return `+27${cleaned.slice(3)}`;
+  }
+  
+  // If none of the above, assume it's already formatted or throw error
+  if (!cleaned.startsWith('+')) {
+    return `+${cleaned}`;
+  }
+  return cleaned;
+};
 
 function Contacts() {
   const [contacts, setContacts] = useState([])
@@ -111,15 +138,14 @@ function Contacts() {
       mother_contact: "'0123456789", // Added quote to preserve leading zero
       father_name: 'Father Name',
       father_contact: "'0123456789", // Added quote to preserve leading zero
-      primary_contact: 'mother',
-      notes: "Phone numbers should be 10 digits starting with 0. Add ' before the number to preserve leading zero (e.g. '0123456789)"
+      notes: "Mother is automatically set as default contact when both parents exist. Empty parent info will show as N/A. At least one parent contact is required."
     }
   ]
 
   const downloadTemplate = () => {
     const worksheet = XLSX.utils.json_to_sheet(templateData)
     
-    // Add column widths
+    // Update column widths (removed primary_contact)
     const wscols = [
       { wch: 20 }, // student_name
       { wch: 8 },  // grade
@@ -129,8 +155,7 @@ function Contacts() {
       { wch: 15 }, // mother_contact
       { wch: 20 }, // father_name
       { wch: 15 }, // father_contact
-      { wch: 15 }, // primary_contact
-      { wch: 30 }  // notes
+      { wch: 40 }  // notes - widened for longer explanation
     ]
     worksheet['!cols'] = wscols
 
@@ -141,54 +166,174 @@ function Contacts() {
 
   const handleFileUpload = async (event) => {
     try {
-      const file = event.target.files[0]
-      const reader = new FileReader()
+      const file = event.target.files[0];
+      const reader = new FileReader();
       
       reader.onload = async (e) => {
-        const data = new Uint8Array(e.target.result)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-        // Tell XLSX to treat IMEI and phone numbers as text
-        if (worksheet['!ref']) {
-          const range = XLSX.utils.decode_range(worksheet['!ref'])
-          for (let R = range.s.r; R <= range.e.r; ++R) {
-            const imeiCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 3 })] // Assuming IMEI is 4th column
-            const motherContactCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 5 })] // Mother's contact
-            const fatherContactCell = worksheet[XLSX.utils.encode_cell({ r: R, c: 7 })] // Father's contact
-            
-            if (imeiCell) {
-              imeiCell.z = '@' // Format as text
-              imeiCell.v = imeiCell.v.toString()
-            }
-            if (motherContactCell) {
-              motherContactCell.z = '@'
-              motherContactCell.v = motherContactCell.v.toString().padStart(10, '0')
-            }
-            if (fatherContactCell) {
-              fatherContactCell.z = '@'
-              fatherContactCell.v = fatherContactCell.v.toString().padStart(10, '0')
-            }
-          }
-        }
-        const contacts = XLSX.utils.sheet_to_json(worksheet)
-        
-        // Validate and format contacts
-        const validatedContacts = contacts.map(contact => ({
-          ...contact,
-          // Format IMEI and phone numbers
-          imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null,
-          mother_contact: contact.mother_contact ? contact.mother_contact.toString().padStart(10, '0') : null,
-          father_contact: contact.father_contact ? contact.father_contact.toString().padStart(10, '0') : null
-        }))
+        try {
+          const workbook = XLSX.read(e.target.result);
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json(worksheet);
 
-        await saveContactsToFirestore(validatedContacts)
-      }
-      
-      reader.readAsArrayBuffer(file)
+          const results = {
+            success: 0,
+            duplicates: 0,
+            errors: []
+          };
+
+          // First, get existing contacts to check for duplicates
+          const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
+          const existingContactsSnap = await getDocs(contactsRef);
+          const existingContacts = new Map();
+          
+          existingContactsSnap.forEach(doc => {
+            const contact = doc.data();
+            // Create more unique key using multiple identifiers
+            const key = [
+              contact.student_name.toLowerCase(),
+              contact.grade.toLowerCase(),
+              contact.mother_contact !== 'N/A' ? contact.mother_contact : '',
+              contact.father_contact !== 'N/A' ? contact.father_contact : '',
+              contact.mother_name !== 'N/A' ? contact.mother_name.toLowerCase() : '',
+              contact.father_name !== 'N/A' ? contact.father_name.toLowerCase() : ''
+            ].join('_');
+            existingContacts.set(key, contact);
+          });
+
+          // Process rows and collect valid contacts
+          const validContacts = [];
+          
+          data.forEach((row, index) => {
+            try {
+              // Basic validation
+              if (!row.student_name?.toString().trim()) {
+                results.errors.push(`Row ${index + 2}: Student name is required`);
+                return; // Skip this row
+              }
+
+              const grade = row.grade?.toString().trim();
+              if (!grade) {
+                results.errors.push(`Row ${index + 2}: Grade is required`);
+                return;
+              }
+
+              // Clean and prepare parent data
+              const motherName = row.mother_name?.toString().trim() || 'N/A';
+              const fatherName = row.father_name?.toString().trim() || 'N/A';
+              const motherContact = row.mother_contact?.toString().trim() || '';
+              const fatherContact = row.father_contact?.toString().trim() || '';
+
+              // Create the same unique key format for the new entry
+              const key = [
+                row.student_name.trim().toLowerCase(),
+                grade.toLowerCase(),
+                motherContact ? formatPhoneNumber(motherContact) : '',
+                fatherContact ? formatPhoneNumber(fatherContact) : '',
+                motherName !== 'N/A' ? motherName.toLowerCase() : '',
+                fatherName !== 'N/A' ? fatherName.toLowerCase() : ''
+              ].join('_');
+
+              // Check for duplicate
+              if (existingContacts.has(key)) {
+                results.duplicates++;
+                return;
+              }
+
+              // Handle parent information
+              const motherNameFormatted = motherName !== 'N/A' ? motherName : '';
+              const fatherNameFormatted = fatherName !== 'N/A' ? fatherName : '';
+
+              // Validate at least one parent has contact info
+              if (!motherContact && !fatherContact) {
+                results.errors.push(`Row ${index + 2}: At least one parent contact is required for ${row.student_name}`);
+                return;
+              }
+
+              // Determine primary contact
+              let primaryContact = 'mother';
+              if (!motherContact && fatherContact) {
+                primaryContact = 'father';
+              }
+
+              const contact = {
+                student_name: row.student_name.trim(),
+                grade: grade.toUpperCase(),
+                device_id: row.device_id?.toString().trim() || '',
+                imei_number: row.imei_number?.toString() || '',
+                mother_name: motherNameFormatted,
+                mother_contact: motherContact ? formatPhoneNumber(motherContact) : 'N/A',
+                father_name: fatherNameFormatted,
+                father_contact: fatherContact ? formatPhoneNumber(fatherContact) : 'N/A',
+                primary_contact: primaryContact,
+                createdAt: new Date(),
+                updatedAt: new Date()
+              };
+
+              validContacts.push(contact);
+              results.success++;
+
+            } catch (error) {
+              results.errors.push(`Row ${index + 2}: ${error.message}`);
+            }
+          });
+
+          // Save valid contacts
+          if (validContacts.length > 0) {
+            await saveContactsToFirestore(validContacts);
+          }
+
+          // Show results
+          let message = `Successfully imported ${results.success} contacts.`;
+          if (results.duplicates > 0) {
+            message += `\n${results.duplicates} duplicates skipped.`;
+          }
+          
+          toast({
+            title: "Import Complete",
+            description: message,
+            variant: "success"
+          });
+
+          // If there were any errors, show them in a separate toast
+          if (results.errors.length > 0) {
+            toast({
+              title: `${results.errors.length} Errors Found`,
+              description: results.errors.join('\n'),
+              variant: "destructive"
+            });
+          }
+
+          fetchContacts(); // Refresh the list
+
+        } catch (error) {
+          console.error('Processing error:', error);
+          setError(error.message);
+          toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive"
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+
     } catch (error) {
-      setError('Error processing file: ' + error.message)
+      console.error('Upload error:', error);
+      setError(error.message);
+      setIsLoading(false);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
     }
-  }
+
+    // Reset file input
+    event.target.value = '';
+  };
 
   const validateImportData = (data) => {
     const requiredFields = [
@@ -419,9 +564,6 @@ function Contacts() {
                   <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Device ID
                   </th>
-                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    IMEI
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Mother
                   </th>
@@ -444,9 +586,6 @@ function Contacts() {
                     </td>
                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                       {contact.device_id}
-                    </td>
-                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm font-mono text-gray-500">
-                      {contact.imei_number}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center justify-between">
