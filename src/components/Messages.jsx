@@ -22,7 +22,7 @@ import {
   Home,
   AlertCircle
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "./ui/dialog";
 import { toast } from "./ui/use-toast";
 
 function Messages() {
@@ -44,6 +44,8 @@ function Messages() {
   const [credits, setCredits] = useState(0);
   const [isLoadingSent, setIsLoadingSent] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [replyMessage, setReplyMessage] = useState('');
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
@@ -310,24 +312,33 @@ function Messages() {
     setIsLoadingInbox(true);
     setError(null);
     try {
-      console.log('Fetching inbox messages...');
-      const response = await fetch('http://localhost:3000/api/get-messages');
-      
+      const response = await fetch('http://localhost:3000/api/inbox-messages');
       if (!response.ok) {
         throw new Error(`Failed to fetch inbox messages: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Inbox messages response:', data);
-      
       if (!data.success) {
         throw new Error(data.error || 'Failed to fetch inbox messages');
       }
 
-      setInboxMessages(data.messages);
+      // Format inbox messages to match the structure we need
+      const formattedMessages = data.messages.map(msg => ({
+        id: msg.messageId,
+        message: msg.message,
+        receivedAt: msg.dateTimeReceived,
+        sender: msg.fromNumber,
+        status: msg.messageStatus?.toLowerCase() || 'received',
+        recipients: [{
+          number: msg.fromNumber,
+          status: 'received'
+        }]
+      }));
+
+      setInboxMessages(formattedMessages);
     } catch (error) {
-      console.error('Error fetching inbox:', error);
-      setError(`Failed to fetch inbox messages: ${error.message}`);
+      console.error('Error fetching inbox messages:', error);
+      setError(error.message);
     } finally {
       setIsLoadingInbox(false);
     }
@@ -401,6 +412,41 @@ function Messages() {
       
     } catch (error) {
       console.error('Error resending messages:', error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSendReply = async (recipients) => {
+    try {
+      const response = await fetch('http://localhost:3000/api/send-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: replyMessage,
+          recipients: recipients.map(r => r.number)
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+
+      toast({
+        title: "Message Sent",
+        description: `Message sent to ${recipients.length} recipient(s)`,
+        variant: "success"
+      });
+
+      setReplyTo(null);
+      setReplyMessage('');
+      fetchSentMessages(); // Refresh the list
+    } catch (error) {
+      console.error('Error sending message:', error);
       toast({
         title: "Error",
         description: error.message,
@@ -578,13 +624,12 @@ function Messages() {
             <div className="flex items-center justify-between">
               <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
               <Button 
-                variant="outline" 
-                size="sm"
                 onClick={fetchInboxMessages}
+                variant="outline"
+                className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 disabled={isLoadingInbox}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingInbox ? 'animate-spin' : ''}`} />
-                Refresh
+                <RefreshCw className={`h-4 w-4 ${isLoadingInbox ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </CardHeader>
@@ -601,18 +646,20 @@ function Messages() {
                 <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
               </div>
             ) : inboxMessages.length > 0 ? (
-              <div className="divide-y divide-gray-100">
-                {inboxMessages.map((msg, index) => (
-                  <div key={msg.messageId || index} className="py-4">
+              <div className="space-y-4">
+                {inboxMessages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt)).map((msg) => (
+                  <Card 
+                    key={msg.id || msg.receivedAt} 
+                    className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setSelectedMessage(msg)}
+                  >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-900">
                           From: {msg.sender}
                         </span>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          msg.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                          msg.status === 'failed' ? 'bg-red-100 text-red-700' :
-                          'bg-yellow-100 text-yellow-700'
+                        <span className={`px-2 py-0.5 text-xs rounded-full ${
+                          msg.status === 'received' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                         }`}>
                           {msg.status}
                         </span>
@@ -622,7 +669,7 @@ function Messages() {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600">{msg.message}</p>
-                  </div>
+                  </Card>
                 ))}
               </div>
             ) : (
@@ -644,13 +691,12 @@ function Messages() {
             <CardTitle className="flex items-center justify-between">
               <span>Sent Messages</span>
               <Button
+                onClick={fetchSentMessages} 
                 variant="outline"
-                size="sm"
-                onClick={fetchSentMessages}
+                className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                 disabled={isLoadingSent}
               >
-                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingSent ? 'animate-spin' : ''}`} />
-                Refresh
+                <RefreshCw className={`h-4 w-4 ${isLoadingSent ? 'animate-spin' : ''}`} />
               </Button>
             </CardTitle>
           </CardHeader>
@@ -660,46 +706,36 @@ function Messages() {
                 <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
               </div>
             ) : sentMessages.length > 0 ? (
-              <div className="divide-y divide-gray-100">
-                {sentMessages.map((msg) => (
-                  <div 
+              <div className="space-y-4">
+                {sentMessages.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt)).map((msg) => (
+                  <Card 
                     key={msg.id} 
-                    className="py-4 hover:bg-gray-50 cursor-pointer transition-colors px-4" 
+                    className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => setSelectedMessage(msg)}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-gray-500" />
                         <span className="text-sm font-medium text-gray-900">
-                          {msg.totalRecipients} recipient{msg.totalRecipients !== 1 ? 's' : ''}
+                          To: {msg.recipients.length} recipient{msg.recipients.length !== 1 ? 's' : ''}
                         </span>
-                        <div className="flex gap-1">
-                          {msg.status.delivered > 0 && (
-                            <span className="px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded-full">
-                              {msg.status.delivered} delivered
-                            </span>
-                          )}
-                          {msg.status.failed > 0 && (
-                            <span className="px-2 py-0.5 text-xs bg-red-50 text-red-700 rounded-full">
-                              {msg.status.failed} failed
-                            </span>
-                          )}
-                          {msg.status.pending > 0 && (
-                            <span className="px-2 py-0.5 text-xs bg-yellow-50 text-yellow-700 rounded-full">
-                              {msg.status.pending} pending
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-xs text-gray-500">
+                          ({msg.status.delivered} delivered, {msg.status.failed} failed)
+                        </span>
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {new Date(msg.sentAt).toLocaleString()}
-                      </span>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResendFailed(msg);
+                        }}
+                      >
+                        Resend Failed
+                      </Button>
                     </div>
                     <p className="text-sm text-gray-600">{msg.message}</p>
-                    <div className="mt-2 text-xs text-gray-500">
-                      Credits used: {msg.totalCredits}
-                    </div>
-                  </div>
+                  </Card>
                 ))}
               </div>
             ) : (
@@ -717,75 +753,78 @@ function Messages() {
 
       {selectedMessage && (
         <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
-          <DialogContent 
-            className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col"
-            aria-describedby="message-description"
-          >
-            <DialogHeader className="border-b pb-4">
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
               <DialogTitle>Message Details</DialogTitle>
             </DialogHeader>
-            
-            <div className="grid gap-6 py-4 overflow-y-auto flex-1" id="message-description">
-              <div className="grid gap-2">
+
+            <div className="space-y-4 py-4">
+              {/* Message */}
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-500">Message</label>
-                <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900 whitespace-pre-wrap">
+                <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
                   {selectedMessage.message}
                 </div>
               </div>
 
-              <div className="grid gap-2">
-                <label className="text-sm font-medium text-gray-500">
-                  Recipients ({selectedMessage.totalRecipients})
-                </label>
-                <div className="divide-y divide-gray-100 max-h-[40vh] overflow-y-auto rounded-lg border border-gray-200">
-                  {selectedMessage.recipients.map((recipient, index) => (
-                    <div key={index} className="p-3 bg-white hover:bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-sm text-gray-900">
-                            {recipient.name} {recipient.surname}
-                          </span>
-                          <span className="text-xs text-gray-500">{recipient.number}</span>
-                        </div>
-                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          recipient.status === 'delivered' ? 'bg-green-100 text-green-800 border border-green-200' :
-                          recipient.status === 'failed' ? 'bg-red-100 text-red-800 border border-red-200' :
-                          'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                        }`}>
-                          {recipient.status}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+              {/* From */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-500">From</label>
+                <div className="px-4 py-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                  <span className="text-sm text-gray-900">{selectedMessage.fromNumber}</span>
+                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                    received
+                  </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mt-auto pt-4 border-t">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Sent At</label>
-                  <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
-                    {new Date(selectedMessage.sentAt).toLocaleString()}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Total Credits</label>
-                  <div className="px-3 py-2 bg-gray-50 rounded-md text-sm text-gray-900">
-                    {selectedMessage.totalCredits}
-                  </div>
-                </div>
+              {/* Reply */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-500">Reply</label>
+                <textarea
+                  value={replyMessage}
+                  onChange={(e) => setReplyMessage(e.target.value)}
+                  placeholder="Type your reply here..."
+                  className="w-full px-4 py-3 h-32 resize-none border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
               </div>
-
-              {selectedMessage.status.failed > 0 && (
-                <div className="border-t pt-4">
-                  <Button 
-                    onClick={() => handleResendFailed(selectedMessage)}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    Resend to {selectedMessage.status.failed} Failed Recipient{selectedMessage.status.failed !== 1 ? 's' : ''}
-                  </Button>
-                </div>
-              )}
             </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button 
+                onClick={() => setSelectedMessage(null)}
+                variant="outline"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  handleSendReply([{ number: selectedMessage.fromNumber }]);
+                  setSelectedMessage(null);
+                }}
+                disabled={!replyMessage.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Send Reply
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {replyTo && (
+        <Dialog open={!!replyTo} onOpenChange={() => setReplyTo(null)}>
+          <DialogContent 
+            className="sm:max-w-[600px]"
+            aria-describedby="reply-message-description"
+          >
+            <DialogHeader>
+              <DialogTitle>Reply to Message</DialogTitle>
+              <DialogDescription id="reply-message-description">
+                Send a reply to this message
+              </DialogDescription>
+            </DialogHeader>
+            {/* Rest of the content... */}
           </DialogContent>
         </Dialog>
       )}

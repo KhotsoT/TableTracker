@@ -335,6 +335,131 @@ app.post('/api/resend-message', async (req, res) => {
   }
 });
 
+// Add endpoint to handle sending messages
+app.post('/api/send-message', async (req, res) => {
+  try {
+    const { message, recipients } = req.body;
+    
+    // Send messages one at a time
+    const results = [];
+    for (const recipientNumber of recipients) {
+      const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        },
+        body: JSON.stringify({
+          recipientNumber,
+          message
+        })
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(`Failed to send SMS: ${response.status} - ${responseText}`);
+      }
+
+      try {
+        const result = JSON.parse(responseText);
+        results.push(result);
+      } catch (e) {
+        results.push({ status: 'sent', raw: responseText });
+      }
+
+      // Add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    res.json({
+      success: true,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Add endpoint to fetch inbox messages
+app.get('/api/inbox-messages', async (req, res) => {
+  try {
+    let allMessages = [];
+    let currentPage = 1;
+    let hasMoreMessages = true;
+    
+    console.log('Starting to fetch inbox messages...');
+
+    // Fetch messages until we get an empty page
+    while (hasMoreMessages) {
+      console.log(`Fetching inbox page ${currentPage}...`);
+      
+      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${currentPage}&pageSize=100`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        }
+      });
+
+      const responseText = await response.text();
+      console.log(`Page ${currentPage} response:`, responseText.substring(0, 200) + '...'); 
+
+      if (!response.ok) {
+        throw new Error(`API responded with status ${response.status}: ${responseText}`);
+      }
+
+      const data = JSON.parse(responseText);
+      const messages = data.webServiceMessages || [];
+      
+      console.log(`Found ${messages.length} inbox messages on page ${currentPage}`);
+      
+      if (messages.length === 0) {
+        hasMoreMessages = false;
+        console.log('No more inbox messages found');
+      } else {
+        allMessages = [...allMessages, ...messages];
+        currentPage++;
+      }
+
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    console.log(`Total inbox messages fetched: ${allMessages.length}`);
+
+    // Format messages for the frontend
+    const formattedMessages = allMessages.map(msg => ({
+      messageId: msg.messageId,
+      message: msg.message,
+      dateTimeReceived: msg.dateTimeReceived,
+      fromNumber: msg.fromNumber,
+      messageStatus: msg.messageStatus || 'received',
+      creditCost: msg.creditCost || 0
+    }));
+
+    res.json({
+      success: true,
+      messages: formattedMessages
+    });
+
+  } catch (error) {
+    console.error('Error fetching inbox messages:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
