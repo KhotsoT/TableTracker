@@ -24,6 +24,9 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "./ui/dialog";
 import { toast } from "./ui/use-toast";
+import { cn } from "../lib/utils";
+import { X } from "lucide-react";
+import { DialogPrimitive } from "@/components/ui/dialog";
 
 function Messages() {
   const [contacts, setContacts] = useState([]);
@@ -753,9 +756,15 @@ function Messages() {
 
       {selectedMessage && (
         <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>Message Details</DialogTitle>
+          <DialogContent 
+            className="sm:max-w-[600px]"
+            aria-describedby="message-details-description"
+          >
+            <DialogHeader className="border-b pb-4">
+              <DialogTitle className="text-xl">Message Details</DialogTitle>
+              <DialogDescription id="message-details-description">
+                {selectedMessage.sender ? 'Received message details' : 'Sent message details'}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-4">
@@ -767,46 +776,115 @@ function Messages() {
                 </div>
               </div>
 
-              {/* From */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-500">From</label>
-                <div className="px-4 py-3 bg-gray-50 rounded-lg flex items-center justify-between">
-                  <span className="text-sm text-gray-900">{selectedMessage.fromNumber}</span>
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                    received
-                  </span>
-                </div>
-              </div>
+              {selectedMessage.sender ? (
+                // For inbox messages
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-500">From</label>
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg flex items-center justify-between">
+                      <span className="text-sm text-gray-900">{selectedMessage.sender}</span>
+                      <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                        received
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Reply */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-500">Reply</label>
-                <textarea
-                  value={replyMessage}
-                  onChange={(e) => setReplyMessage(e.target.value)}
-                  placeholder="Type your reply here..."
-                  className="w-full px-4 py-3 h-32 resize-none border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
+                  {/* Reply section for inbox messages */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-500">Reply</label>
+                    <textarea
+                      value={replyMessage}
+                      onChange={(e) => setReplyMessage(e.target.value)}
+                      placeholder="Type your reply here..."
+                      className="w-full px-4 py-3 h-32 resize-none border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </>
+              ) : (
+                // For sent messages
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-500">
+                      Recipients ({selectedMessage.recipients?.length})
+                    </label>
+                    <div className="bg-gray-50 rounded-lg divide-y divide-gray-100">
+                      {selectedMessage.recipients?.map((recipient, index) => (
+                        <div key={index} className="px-4 py-3 flex items-center justify-between">
+                          <span className="text-sm text-gray-900">{recipient.number}</span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            recipient.status === 'delivered' ? 'bg-green-100 text-green-800' :
+                            recipient.status === 'failed' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {recipient.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-500">Sent At</label>
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
+                      {new Date(selectedMessage.sentAt).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-500">Credits Used</label>
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
+                      {selectedMessage.totalCredits || 1}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button 
-                onClick={() => setSelectedMessage(null)}
-                variant="outline"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  handleSendReply([{ number: selectedMessage.fromNumber }]);
-                  setSelectedMessage(null);
-                }}
-                disabled={!replyMessage.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Send Reply
-              </Button>
+              {selectedMessage.sender ? (
+                // Buttons for inbox messages
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setSelectedMessage(null)}
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      handleSendReply([{ number: selectedMessage.sender }]);
+                      setSelectedMessage(null);
+                    }}
+                    disabled={!replyMessage.trim()}
+                    className="bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Send Reply
+                  </Button>
+                </>
+              ) : (
+                // Buttons for sent messages
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setSelectedMessage(null)}
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    Close
+                  </Button>
+                  {selectedMessage.status?.failed > 0 && (
+                    <Button
+                      onClick={() => {
+                        handleResendFailed(selectedMessage);
+                        setSelectedMessage(null);
+                      }}
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Resend Failed
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </DialogContent>
         </Dialog>

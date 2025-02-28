@@ -99,5 +99,6 @@ export {
   DialogTitle,
   DialogTrigger,
   DialogDescription,
-  DialogClose
+  DialogClose,
+  DialogPrimitive
 } 
