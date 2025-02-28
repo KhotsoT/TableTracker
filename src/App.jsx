@@ -2,7 +2,7 @@ import { BrowserRouter as Router } from 'react-router-dom'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 import { getAuth, signOut } from 'firebase/auth'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Dashboard from './components/Dashboard'
 import Messages from './components/Messages'
 import Contacts from './components/Contacts'
@@ -14,14 +14,31 @@ import './App.css'
 import { Toaster } from "sonner"
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const auth = getAuth()
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setIsAuthenticated(!!user)
+      setLoading(false)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
   const handleLogout = async () => {
     const auth = getAuth()
     try {
       await signOut(auth)
-      window.location.href = '/'
+      setIsAuthenticated(false)
     } catch (error) {
       console.error('Error signing out:', error)
     }
+  }
+
+  if (loading) {
+    return <div>Loading...</div>
   }
 
   return (
@@ -29,14 +46,26 @@ function App() {
       <Toaster />
       <Router>
         <div className="flex h-screen bg-gray-100">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto ml-64">
+          {isAuthenticated && <Sidebar onLogout={handleLogout} />}
+          <main className={`flex-1 overflow-y-auto ${isAuthenticated ? 'ml-64' : ''}`}>
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/contacts" element={<Contacts />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/tracking" element={<DeviceTracking />} />
+              <Route path="/login" element={
+                !isAuthenticated ? <Login /> : <Navigate to="/dashboard" replace />
+              } />
+              <Route path="/" element={
+                isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />
+              } />
+              {/* Protected Routes */}
+              {isAuthenticated ? (
+                <>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/contacts" element={<Contacts />} />
+                  <Route path="/messages" element={<Messages />} />
+                  <Route path="/tracking" element={<DeviceTracking />} />
+                </>
+              ) : (
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              )}
             </Routes>
           </main>
         </div>

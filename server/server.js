@@ -1,7 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const admin = require('firebase-admin');
 require('dotenv').config();
+
+// Initialize Firebase Admin SDK
+const serviceAccount = require('./serviceAccountKey.json'); // You'll need to add this file
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 const app = express();
 app.use(cors());

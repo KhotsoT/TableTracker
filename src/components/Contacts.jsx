@@ -87,9 +87,15 @@ function Contacts() {
     setError(null);
     const errors = [];
     const successfulContacts = [];
+    const duplicates = [];
     
     try {
       const batch = writeBatch(db);
+      
+      // First, get all existing contacts to check for duplicates
+      const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
+      const existingContactsSnapshot = await getDocs(contactsRef);
+      const existingContacts = existingContactsSnapshot.docs.map(doc => doc.data());
       
       for (const row of validatedContacts) {
         try {
@@ -99,12 +105,47 @@ function Contacts() {
             continue;
           }
 
-          // Validate parent contact info
-          if ((!row.mother_contact || row.mother_contact === '') && 
-              (!row.father_contact || row.father_contact === '')) {
-            errors.push(`At least one parent contact is required for ${row.learner_name}`);
+          // Check for duplicates (case-insensitive)
+          const isDuplicate = existingContacts.some(contact => 
+            contact.learner_name.toLowerCase() === row.learner_name.trim().toLowerCase() &&
+            contact.grade.toLowerCase() === row.grade.toString().trim().toLowerCase()
+          );
+
+          if (isDuplicate) {
+            duplicates.push(`${row.learner_name} (Grade ${row.grade})`);
             continue;
           }
+
+          // Validate parent contact info and format phone numbers
+          const isValidPhoneNumber = (number) => {
+            if (!number || number === '' || number === 'N/A') return false;
+            // Remove any non-digit characters
+            const cleaned = number.toString().replace(/\D/g, '');
+            // Check if it's a valid SA number format (10 digits starting with 0)
+            return /^0\d{9}$/.test(cleaned);
+          };
+
+          const formatValidPhoneNumber = (number) => {
+            if (!isValidPhoneNumber(number)) return 'N/A';
+            const cleaned = number.toString().replace(/\D/g, '');
+            return cleaned; // Keep the 0 prefix format
+          };
+
+          // Check and format parent contacts
+          const motherContact = formatValidPhoneNumber(row.mother_contact || 'N/A');
+          const fatherContact = formatValidPhoneNumber(row.father_contact || 'N/A');
+          
+          const hasValidMotherContact = motherContact !== 'N/A';
+          const hasValidFatherContact = fatherContact !== 'N/A';
+          
+          if (!hasValidMotherContact && !hasValidFatherContact) {
+            errors.push(`At least one valid parent contact number is required for ${row.learner_name}`);
+            continue;
+          }
+
+          // Determine primary contact - mother is default if both exist, otherwise use the valid one
+          const primaryContact = (hasValidMotherContact && hasValidFatherContact) ? 'mother' : 
+                               (hasValidMotherContact ? 'mother' : 'father');
 
           // Validate device info if provided
           if ((row.device_id && !row.imei_number) || (!row.device_id && row.imei_number)) {
@@ -118,17 +159,17 @@ function Contacts() {
           // Create contact document reference
           const contactRef = doc(collection(db, 'schools', SCHOOL_ID, 'contacts'));
           
-          // Prepare contact data
+          // Prepare contact data with proper handling of empty/N/A values
           const contactData = {
             learner_name: row.learner_name.trim(),
             grade: formattedGrade,
             device_id: row.device_id?.trim() || '',
             imei_number: row.imei_number || '',
             mother_name: row.mother_name?.trim() || 'N/A',
-            mother_contact: row.mother_contact || 'N/A',
+            mother_contact: motherContact,
             father_name: row.father_name?.trim() || 'N/A',
-            father_contact: row.father_contact || 'N/A',
-            primary_contact: row.primary_contact?.toLowerCase().trim() || 'mother',
+            father_contact: fatherContact,
+            primary_contact: primaryContact,
             createdAt: new Date(),
             updatedAt: new Date()
           };
@@ -172,10 +213,12 @@ function Contacts() {
         await batch.commit();
       }
 
-      // Set import results
+      // Set import results with duplicates count
       setImportResults({
         success: successfulContacts.length,
-        errors: errors
+        errors: errors,
+        duplicates: duplicates.length,
+        duplicatesList: duplicates
       });
 
       // Refresh contacts list
@@ -498,10 +541,21 @@ function Contacts() {
     })
   }
 
-  // Add this function to get unique grades from contacts
+  // Update the getUniqueGrades function
   const getUniqueGrades = () => {
     const grades = new Set(contacts.map(contact => contact.grade));
-    return ['all', ...Array.from(grades).sort()];
+    return ['all', ...Array.from(grades).sort((a, b) => {
+      // First try to sort numerically
+      const gradeA = parseInt(a);
+      const gradeB = parseInt(b);
+      
+      if (!isNaN(gradeA) && !isNaN(gradeB)) {
+        return gradeA - gradeB;
+      }
+      
+      // If not numbers, sort alphabetically
+      return a.localeCompare(b);
+    })];
   };
 
   // Update the filteredContacts logic
@@ -583,9 +637,9 @@ function Contacts() {
         // Delete contact
         batch.delete(docSnapshot.ref);
         
-        // If contact has device, delete from devices collection
-        if (contactData.device_id) {
-          const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'), contactData.device_id);
+        // If contact has device_ref, delete from devices collection
+        if (contactData.device_ref) {
+          const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', contactData.device_ref);
           batch.delete(deviceRef);
         }
       });
@@ -598,7 +652,7 @@ function Contacts() {
       
       toast({
         title: "Contacts Deleted",
-        description: `All contacts for Grade ${grade} have been deleted`,
+        description: `All contacts and their devices for Grade ${grade} have been deleted`,
         variant: "success"
       });
     } catch (error) {
@@ -852,9 +906,20 @@ function Contacts() {
                 )}
                 
                 {importResults.duplicates > 0 && (
-                  <div className="flex items-center gap-2 text-yellow-600 bg-yellow-50 px-4 py-3 rounded-lg">
-                    <AlertTriangle className="h-5 w-5" />
-                    <span>{importResults.duplicates} duplicate entries skipped</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-yellow-600 bg-yellow-50 px-4 py-3 rounded-lg">
+                      <AlertTriangle className="h-5 w-5" />
+                      <span>{importResults.duplicates} duplicate entries skipped</span>
+                    </div>
+                    <div className="bg-yellow-50 rounded-lg p-4 max-h-[200px] overflow-y-auto">
+                      <ul className="list-disc list-inside space-y-1">
+                        {importResults.duplicatesList.map((duplicate, index) => (
+                          <li key={index} className="text-yellow-700 text-sm">
+                            Duplicate entry: {duplicate}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 )}
 

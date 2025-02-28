@@ -141,11 +141,11 @@ function Messages() {
       
       if (selectedContact === 'both' || 
          (selectedContact === 'primary' && contact.primary_contact === 'mother')) {
-        if (contact.mother_contact) {
+        if (contact.mother_contact && contact.mother_contact !== 'N/A') {
           recipients.push({
-            name: contact.student_name,
+            name: contact.learner_name,
             number: contact.mother_contact,
-            relation: 'mother',
+            relation: 'Mother',
             grade: contact.grade
           });
         }
@@ -153,11 +153,11 @@ function Messages() {
       
       if (selectedContact === 'both' || 
          (selectedContact === 'primary' && contact.primary_contact === 'father')) {
-        if (contact.father_contact) {
+        if (contact.father_contact && contact.father_contact !== 'N/A') {
           recipients.push({
-            name: contact.student_name,
+            name: contact.learner_name,
             number: contact.father_contact,
-            relation: 'father',
+            relation: 'Father',
             grade: contact.grade
           });
         }
@@ -599,9 +599,12 @@ function Messages() {
                   <div className="max-h-[240px] overflow-y-auto border rounded-lg bg-white">
                     {previewRecipients.map((recipient, index) => (
                       <div key={index} 
-                        className="text-sm flex justify-between p-3 border-b last:border-b-0 hover:bg-gray-50"
+                        className="text-sm flex justify-between items-center p-3 border-b last:border-b-0 hover:bg-gray-50"
                       >
-                        <span>{recipient.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-gray-900">{recipient.name}</span>
+                          <span className="text-gray-500 text-xs">Grade {recipient.grade} • {recipient.relation}</span>
+                        </div>
                         <span className="text-blue-600 font-medium">{recipient.number}</span>
                       </div>
                     ))}

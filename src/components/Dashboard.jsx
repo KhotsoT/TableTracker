@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, History, MapPin, CheckCircle, Tablet, Users, Wallet } from 'lucide-react'
 import { Card } from './ui/card'
 import { db, SCHOOL_ID, SCHOOL_NAME } from '../config/firebase'
-import { doc, getDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore'
+import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc } from 'firebase/firestore'
 import { getSMSBalance } from '../services/smsService'
 import { PageContainer, PageHeader } from './Layout'
+import { getAuth } from 'firebase/auth'
 
 function Dashboard() {
   const [stats, setStats] = useState({
@@ -23,14 +24,43 @@ function Dashboard() {
   const [recentActivity, setRecentActivity] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [schoolExists, setSchoolExists] = useState(false)
 
   useEffect(() => {
     fetchDashboardData()
   }, [])
 
+  const checkSchoolExists = async () => {
+    try {
+      const schoolRef = doc(db, 'schools', SCHOOL_ID)
+      const schoolSnap = await getDoc(schoolRef)
+      return schoolSnap.exists()
+    } catch (error) {
+      console.error('Error checking school:', error)
+      return false
+    }
+  }
+
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true)
+      setError(null)
+
+      // Check if user is authenticated
+      const auth = getAuth()
+      const user = auth.currentUser
+      if (!user) {
+        throw new Error('User not authenticated')
+      }
+      
+      // Check if school exists first
+      const exists = await checkSchoolExists()
+      setSchoolExists(exists)
+      
+      if (!exists) {
+        setError('School not initialized')
+        return
+      }
       
       // Fetch school info
       const schoolRef = doc(db, 'schools', SCHOOL_ID)
@@ -99,12 +129,183 @@ function Dashboard() {
     return date.toLocaleDateString()
   }
 
+  const initializeSchool = async () => {
+    try {
+      const schoolRef = doc(db, 'schools', SCHOOL_ID)
+      await setDoc(schoolRef, {
+        name: "Curtis Nkondo SoS",
+        createdAt: new Date()
+      }, { merge: true })  // merge: true will not overwrite if doc exists
+      
+      console.log('School document initialized')
+      // Refresh the dashboard data
+      fetchDashboardData()
+    } catch (error) {
+      console.error('Error initializing school:', error)
+    }
+  }
+
   if (isLoading) {
     return <div className="p-6">Loading dashboard...</div>
   }
 
+  if (!schoolExists) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-4">School Not Initialized</h2>
+          <button 
+            onClick={initializeSchool}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Initialize School Data
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (error) {
-    return <div className="p-6 text-red-600">{error}</div>
+    return (
+      <div className="min-h-screen bg-gray-100">
+        {/* Top Stats Bar */}
+        <div className="bg-white border-b">
+          <div className="min-h-[5rem] flex items-center px-4 sm:px-8 py-4">
+            <div className="max-w-7xl mx-auto w-full space-y-1">
+              <PageHeader
+                title={SCHOOL_NAME}
+              >
+                <div className="hidden sm:flex items-center gap-4 text-sm text-gray-500">
+                  <span>{new Date().toLocaleDateString()}</span>
+                </div>
+              </PageHeader>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
+            {/* SMS Credits Card */}
+            <Card className="bg-white overflow-hidden">
+              <div className="p-4 sm:p-8">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-green-50">
+                    <Wallet className="w-6 h-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">SMS Credits</p>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {isLoading ? (
+                        <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                      ) : (
+                        stats.smsCredit || '0'
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
+                <span className="text-sm text-green-600">Available for messages</span>
+              </div>
+            </Card>
+
+            {/* Students Card */}
+            <Card className="bg-white overflow-hidden">
+              <div className="p-4 sm:p-8">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-blue-50/50">
+                    <Users className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Total Students</p>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {isLoading ? (
+                        <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                      ) : (
+                        stats.totalStudents
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
+                <span className="text-sm text-blue-600">Active enrollments</span>
+              </div>
+            </Card>
+
+            {/* Devices Card */}
+            <Card className="bg-white overflow-hidden">
+              <div className="p-4 sm:p-8">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-green-50">
+                    <Tablet className="w-6 h-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Active Devices</p>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {isLoading ? (
+                        <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
+                      ) : (
+                        `${stats.activeTablets}/${stats.totalTablets}`
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
+                <span className="text-sm text-green-600">Devices tracked</span>
+              </div>
+            </Card>
+          </div>
+
+          {/* Activity Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                <span className="text-xs sm:text-sm text-gray-500">Last 24 hours</span>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {recentActivity.map((activity) => (
+                <div key={activity.id} className="flex items-start gap-3 sm:gap-4 px-4 sm:px-8 py-4 sm:py-6 hover:bg-gray-50 transition-colors">
+                  {activity.type === 'alert' && 
+                    <AlertTriangle className="w-4 h-4 text-red-500 mt-1 shrink-0" />
+                  }
+                  {activity.type === 'location' && 
+                    <MapPin className="w-4 h-4 text-blue-500 mt-1 shrink-0" />
+                  }
+                  {activity.type === 'status' && 
+                    <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
+                  }
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
+                      <div>
+                        <p className="font-medium text-gray-900 mb-2">{activity.device}</p>
+                        <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 sm:line-clamp-none">{activity.message}</p>
+                        <p className="text-sm text-gray-500 mt-2">
+                          {activity.student} - {activity.grade}
+                        </p>
+                      </div>
+                      <span className="text-xs text-gray-500 whitespace-nowrap mt-2 sm:mt-0 sm:ml-4">{activity.time}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {recentActivity.length === 0 && (
+                <div className="px-4 sm:px-8 py-12 sm:py-16 text-center">
+                  <History className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 text-sm">No recent activity to show</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -115,7 +316,6 @@ function Dashboard() {
           <div className="max-w-7xl mx-auto w-full space-y-1">
             <PageHeader
               title={SCHOOL_NAME}
-              subtitle={schoolInfo.address}
             >
               <div className="hidden sm:flex items-center gap-4 text-sm text-gray-500">
                 <span>{new Date().toLocaleDateString()}</span>

@@ -6,13 +6,12 @@ export const SCHOOL_ID = import.meta.env.VITE_SCHOOL_ID;
 export const SCHOOL_NAME = import.meta.env.VITE_SCHOOL_NAME;
 
 const firebaseConfig = {
-  // Replace with your Firebase config
-  apiKey: "AIzaSyC4nFhQleHwNcKCFOp3pxwnh7yF_48mtsg",
-  authDomain: "tabletracker-curtis.firebaseapp.com",
-  projectId: "tabletracker-curtis",
-  storageBucket: "tabletracker-curtis.firebasestorage.app",
-  messagingSenderId: "690668588291",
-  appId: "1:690668588291:web:806ab3f885e29313766d36"
+  apiKey: "AIzaSyAViieUy8atQe6VALse4eOq9l0bdSvEpxs",
+  authDomain: "schoolconnect-curtis.firebaseapp.com",
+  projectId: "schoolconnect-curtis",
+  storageBucket: "schoolconnect-curtis.firebasestorage.app",
+  messagingSenderId: "736273003793",
+  appId: "1:736273003793:web:eb185d979c441908f7c8b0"
 };
 
 const app = initializeApp(firebaseConfig);
