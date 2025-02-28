@@ -25,27 +25,61 @@ import {
 
 // Add this function before the Contacts component
 const formatPhoneNumber = (number) => {
-  // Remove any non-digit characters
-  const cleaned = number.toString().replace(/\D/g, '');
+  if (!number || number === 'N/A') return 'N/A';
   
-  // Handle different formats
+  // Remove all spaces, hyphens and other non-digit characters
+  let cleaned = number.toString().replace(/[^\d+]/g, '');
+  
+  // Handle Excel's leading zero removal
+  // If the number is 9 digits, assume it's a SA number without the leading zero
   if (cleaned.length === 9) {
-    return `+27${cleaned}`;
-  }
-  if (cleaned.length === 10 && cleaned.startsWith('0')) {
-    return `+27${cleaned.slice(1)}`;
-  }
-  if (cleaned.length === 11 && cleaned.startsWith('27')) {
-    return `+${cleaned}`;
-  }
-  if (cleaned.length === 12 && cleaned.startsWith('270')) {
-    return `+27${cleaned.slice(3)}`;
+    cleaned = '0' + cleaned;
   }
   
-  // If none of the above, assume it's already formatted or throw error
-  if (!cleaned.startsWith('+')) {
-    return `+${cleaned}`;
+  // If number starts with '0', replace with '+27'
+  if (cleaned.startsWith('0')) {
+    cleaned = '+27' + cleaned.substring(1);
   }
+  
+  // If number starts with '27', add '+' prefix
+  if (cleaned.startsWith('27')) {
+    cleaned = '+' + cleaned;
+  }
+  
+  // If number doesn't have any prefix and is 10 digits (with 0), convert to +27
+  if (cleaned.length === 10 && cleaned.startsWith('0')) {
+    cleaned = '+27' + cleaned.substring(1);
+  }
+  
+  // Validate the final format
+  if (!/^\+27\d{9}$/.test(cleaned)) {
+    return 'N/A';
+  }
+  
+  return cleaned;
+};
+
+const isValidPhoneNumber = (number) => {
+  if (!number || number === 'N/A') return false;
+  const formatted = formatPhoneNumber(number);
+  return formatted !== 'N/A' && /^\+27\d{9}$/.test(formatted);
+};
+
+const formatImeiNumber = (imei) => {
+  if (!imei) return '';
+  
+  // Convert to string and remove any non-digit characters
+  let cleaned = imei.toString().replace(/\D/g, '');
+  
+  // Handle Excel's leading zero removal
+  // Pad with leading zeros if less than 15 digits
+  cleaned = cleaned.padStart(15, '0');
+  
+  // Validate the final format
+  if (!/^\d{15}$/.test(cleaned)) {
+    return '';
+  }
+  
   return cleaned;
 };
 
@@ -116,27 +150,28 @@ function Contacts() {
             continue;
           }
 
+          // Validate device info if provided
+          if ((row.device_id && !row.imei_number) || (!row.device_id && row.imei_number)) {
+            errors.push(`Incomplete device information for ${row.learner_name}. Both device ID and IMEI are required.`);
+            continue;
+          }
+
+          // Format IMEI if device info is provided
+          let formattedImei = '';
+          if (row.device_id && row.imei_number) {
+            formattedImei = formatImeiNumber(row.imei_number);
+            if (!formattedImei) {
+              errors.push(`Invalid IMEI format for ${row.learner_name}. IMEI must be 15 digits.`);
+              continue;
+            }
+          }
+
           // Validate parent contact info and format phone numbers
-          const isValidPhoneNumber = (number) => {
-            if (!number || number === '' || number === 'N/A') return false;
-            // Remove any non-digit characters
-            const cleaned = number.toString().replace(/\D/g, '');
-            // Check if it's a valid SA number format (10 digits starting with 0)
-            return /^0\d{9}$/.test(cleaned);
-          };
-
-          const formatValidPhoneNumber = (number) => {
-            if (!isValidPhoneNumber(number)) return 'N/A';
-            const cleaned = number.toString().replace(/\D/g, '');
-            return cleaned; // Keep the 0 prefix format
-          };
-
-          // Check and format parent contacts
-          const motherContact = formatValidPhoneNumber(row.mother_contact || 'N/A');
-          const fatherContact = formatValidPhoneNumber(row.father_contact || 'N/A');
+          const motherContact = formatPhoneNumber(row.mother_contact || 'N/A');
+          const fatherContact = formatPhoneNumber(row.father_contact || 'N/A');
           
-          const hasValidMotherContact = motherContact !== 'N/A';
-          const hasValidFatherContact = fatherContact !== 'N/A';
+          const hasValidMotherContact = isValidPhoneNumber(motherContact);
+          const hasValidFatherContact = isValidPhoneNumber(fatherContact);
           
           if (!hasValidMotherContact && !hasValidFatherContact) {
             errors.push(`At least one valid parent contact number is required for ${row.learner_name}`);
@@ -146,12 +181,6 @@ function Contacts() {
           // Determine primary contact - mother is default if both exist, otherwise use the valid one
           const primaryContact = (hasValidMotherContact && hasValidFatherContact) ? 'mother' : 
                                (hasValidMotherContact ? 'mother' : 'father');
-
-          // Validate device info if provided
-          if ((row.device_id && !row.imei_number) || (!row.device_id && row.imei_number)) {
-            errors.push(`Incomplete device information for ${row.learner_name}. Both device ID and IMEI are required.`);
-            continue;
-          }
 
           // Format the grade
           const formattedGrade = row.grade.toString().trim();
@@ -164,7 +193,7 @@ function Contacts() {
             learner_name: row.learner_name.trim(),
             grade: formattedGrade,
             device_id: row.device_id?.trim() || '',
-            imei_number: row.imei_number || '',
+            imei_number: formattedImei,
             mother_name: row.mother_name?.trim() || 'N/A',
             mother_contact: motherContact,
             father_name: row.father_name?.trim() || 'N/A',
@@ -176,12 +205,6 @@ function Contacts() {
 
           // Only create device if all device info is valid
           if (row.device_id && row.imei_number) {
-            // Validate IMEI format
-            if (!/^\d{15}$/.test(row.imei_number.toString())) {
-              errors.push(`Invalid IMEI format for ${row.learner_name}. IMEI must be 15 digits.`);
-              continue;
-            }
-
             // Create device document
             const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'));
             batch.set(deviceRef, {
@@ -525,21 +548,46 @@ function Contacts() {
   }
 
   const validateContacts = (contacts) => {
-    return contacts.map(contact => {
-      // Validate IMEI format (15 digits)
+    const errors = [];
+    const validatedContacts = [];
+
+    contacts.forEach((contact, index) => {
+      const rowNum = index + 2; // Adding 2 to account for header row and 0-based index
+      const validatedContact = { ...contact };
+
+      // Format phone numbers
+      validatedContact.mother_contact = formatPhoneNumber(contact.mother_contact);
+      validatedContact.father_contact = formatPhoneNumber(contact.father_contact);
+
+      // Format IMEI if present
       if (contact.imei_number) {
-        const imeiString = contact.imei_number.toString()
-        if (!/^\d{15}$/.test(imeiString.padStart(15, '0'))) {
-          throw new Error(`Invalid IMEI format for student ${contact.learner_name}. IMEI must be 15 digits.`)
+        const formattedImei = formatImeiNumber(contact.imei_number);
+        if (!formattedImei) {
+          errors.push(`Invalid IMEI format for ${contact.learner_name}. IMEI must be 15 digits.`);
         }
+        validatedContact.imei_number = formattedImei;
       }
-      
-      return {
-        ...contact,
-        imei_number: contact.imei_number ? contact.imei_number.toString().padStart(15, '0') : null
+
+      // Check if at least one parent contact is valid
+      const hasValidMotherContact = isValidPhoneNumber(validatedContact.mother_contact);
+      const hasValidFatherContact = isValidPhoneNumber(validatedContact.father_contact);
+
+      if (!hasValidMotherContact && !hasValidFatherContact) {
+        errors.push(`At least one valid parent contact number is required for ${contact.learner_name}`);
       }
-    })
-  }
+
+      // Set primary contact based on valid numbers
+      if (hasValidMotherContact) {
+        validatedContact.primary_contact = 'mother';
+      } else if (hasValidFatherContact) {
+        validatedContact.primary_contact = 'father';
+      }
+
+      validatedContacts.push(validatedContact);
+    });
+
+    return { errors, validatedContacts };
+  };
 
   // Update the getUniqueGrades function
   const getUniqueGrades = () => {

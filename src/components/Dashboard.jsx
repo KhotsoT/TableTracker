@@ -79,10 +79,17 @@ function Dashboard() {
       const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices')
       const devicesQuery = query(devicesRef)
       const devicesSnap = await getDocs(devicesQuery)
-      const devices = devicesSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
+      const devices = devicesSnap.docs.map(doc => {
+        const data = doc.data()
+        const lastSeen = data.last_seen?.toDate() || new Date(0)
+        const timeDiff = Date.now() - lastSeen.getTime()
+        const minutesDiff = Math.floor(timeDiff / (1000 * 60))
+        
+        return {
+          ...data,
+          isActive: minutesDiff <= 30 && !data.is_outside_geofence
+        }
+      })
       
       console.log('Devices from collection:', devices)
       
@@ -93,10 +100,10 @@ function Dashboard() {
       // Update all stats at once
       setStats({
         totalTablets: devices.length,
-        activeTablets: devices.length, // For now all devices are considered active
+        activeTablets: devices.filter(d => d.isActive).length,
         totalStudents,
-        activeDevices: devices.length,
-        smsCredit: smsBalance  // Make sure SMS balance is included here
+        activeDevices: devices.filter(d => d.isActive).length,
+        smsCredit: smsBalance
       })
       
       // Fetch alerts
