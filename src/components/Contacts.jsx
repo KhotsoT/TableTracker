@@ -58,6 +58,7 @@ function Contacts() {
   const [selectedGrade, setSelectedGrade] = useState('all');
   const [importResults, setImportResults] = useState(null);
   const [editContact, setEditContact] = useState(null);
+  const [deleteAllDialog, setDeleteAllDialog] = useState({ open: false, grade: null });
 
   // Fetch contacts on component mount
   useEffect(() => {
@@ -84,49 +85,100 @@ function Contacts() {
   const saveContactsToFirestore = async (validatedContacts) => {
     setIsLoading(true);
     setError(null);
+    const errors = [];
+    const successfulContacts = [];
     
     try {
       const batch = writeBatch(db);
       
       for (const row of validatedContacts) {
-        // Format the grade to be consistent
-        const formattedGrade = row.grade.toString().trim();
-        
-        // Add to contacts collection
-        const contactRef = doc(collection(db, 'schools', SCHOOL_ID, 'contacts'));
-        batch.set(contactRef, {
-          student_name: row.student_name.trim(),
-          grade: formattedGrade,
-          device_id: row.device_id.trim(),
-          imei_number: row.imei_number,
-          mother_name: row.mother_name.trim(),
-          mother_contact: row.mother_contact,
-          father_name: row.father_name.trim(),
-          father_contact: row.father_contact,
-          primary_contact: row.primary_contact.toLowerCase().trim(),
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+        try {
+          // Validate required fields
+          if (!row.learner_name || !row.grade) {
+            errors.push(`Missing required fields for ${row.learner_name || 'unknown learner'}`);
+            continue;
+          }
 
-        // If device info exists, add to devices collection
-        if (row.imei_number && row.device_id) {
-          const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'));
-          batch.set(deviceRef, {
-            imei: row.imei_number,
-            device_id: row.device_id.trim(),
-            student_name: row.student_name.trim(),
+          // Validate parent contact info
+          if ((!row.mother_contact || row.mother_contact === '') && 
+              (!row.father_contact || row.father_contact === '')) {
+            errors.push(`At least one parent contact is required for ${row.learner_name}`);
+            continue;
+          }
+
+          // Validate device info if provided
+          if ((row.device_id && !row.imei_number) || (!row.device_id && row.imei_number)) {
+            errors.push(`Incomplete device information for ${row.learner_name}. Both device ID and IMEI are required.`);
+            continue;
+          }
+
+          // Format the grade
+          const formattedGrade = row.grade.toString().trim();
+          
+          // Create contact document reference
+          const contactRef = doc(collection(db, 'schools', SCHOOL_ID, 'contacts'));
+          
+          // Prepare contact data
+          const contactData = {
+            learner_name: row.learner_name.trim(),
             grade: formattedGrade,
-            status: 'active',
-            last_seen: new Date(),
-            assigned_to: contactRef.id
-          });
+            device_id: row.device_id?.trim() || '',
+            imei_number: row.imei_number || '',
+            mother_name: row.mother_name?.trim() || 'N/A',
+            mother_contact: row.mother_contact || 'N/A',
+            father_name: row.father_name?.trim() || 'N/A',
+            father_contact: row.father_contact || 'N/A',
+            primary_contact: row.primary_contact?.toLowerCase().trim() || 'mother',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+
+          // Only create device if all device info is valid
+          if (row.device_id && row.imei_number) {
+            // Validate IMEI format
+            if (!/^\d{15}$/.test(row.imei_number.toString())) {
+              errors.push(`Invalid IMEI format for ${row.learner_name}. IMEI must be 15 digits.`);
+              continue;
+            }
+
+            // Create device document
+            const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'));
+            batch.set(deviceRef, {
+              imei: row.imei_number,
+              device_id: row.device_id.trim(),
+              learner_name: row.learner_name.trim(),
+              grade: formattedGrade,
+              status: 'active',
+              last_seen: new Date(),
+              assigned_to: contactRef.id
+            });
+            
+            // Update contact with device reference
+            contactData.device_ref = deviceRef.id;
+          }
+
+          // Add contact to batch
+          batch.set(contactRef, contactData);
+          successfulContacts.push(contactData);
+
+        } catch (error) {
+          errors.push(`Error processing ${row.learner_name}: ${error.message}`);
+          continue;
         }
       }
 
-      await batch.commit();
-      console.log('Successfully saved contacts:', validatedContacts.length);
-      
-      // Refresh the contacts list
+      // Only commit if we have successful contacts
+      if (successfulContacts.length > 0) {
+        await batch.commit();
+      }
+
+      // Set import results
+      setImportResults({
+        success: successfulContacts.length,
+        errors: errors
+      });
+
+      // Refresh contacts list
       await fetchContacts();
       
     } catch (error) {
@@ -140,14 +192,14 @@ function Contacts() {
   // Template structure for student contacts
   const templateData = [
     {
-      student_name: 'Example Student',
+      learner_name: 'Example Learner',
       grade: '11A',
       device_id: 'iPad-001',
       imei_number: '123456789012345',
       mother_name: 'Mother Name',
-      mother_contact: "'0123456789", // Added quote to preserve leading zero
+      mother_contact: "'0123456789",
       father_name: 'Father Name',
-      father_contact: "'0123456789", // Added quote to preserve leading zero
+      father_contact: "'0123456789",
       notes: "Mother is automatically set as default contact when both parents exist. Empty parent info will show as N/A. At least one parent contact is required."
     }
   ]
@@ -157,7 +209,7 @@ function Contacts() {
     
     // Update column widths (removed primary_contact)
     const wscols = [
-      { wch: 20 }, // student_name
+      { wch: 20 }, // learner_name
       { wch: 8 },  // grade
       { wch: 15 }, // device_id
       { wch: 20 }, // imei_number
@@ -176,6 +228,7 @@ function Contacts() {
 
   const handleFileUpload = async (event) => {
     try {
+      setIsLoading(true);
       const file = event.target.files[0];
       const reader = new FileReader();
       
@@ -190,141 +243,44 @@ function Contacts() {
             throw new Error('File is empty or has invalid format');
           }
 
+          // Map old column names to new ones if necessary
+          const mappedData = data.map(row => ({
+            learner_name: row.learner_name || row.student_name, // Handle both old and new column names
+            grade: row.grade,
+            device_id: row.device_id,
+            imei_number: row.imei_number,
+            mother_name: row.mother_name,
+            mother_contact: row.mother_contact,
+            father_name: row.father_name,
+            father_contact: row.father_contact,
+            primary_contact: row.primary_contact || 'mother' // Default to mother if not specified
+          }));
+
           // Validate required columns exist
-          const requiredColumns = ['student_name', 'grade'];
-          const firstRow = data[0];
+          const requiredColumns = ['learner_name', 'grade'];
+          const firstRow = mappedData[0];
           for (const column of requiredColumns) {
             if (!(column in firstRow)) {
               throw new Error(`Missing required column: ${column}`);
             }
           }
 
-          const results = {
-            success: 0,
-            duplicates: 0,
-            errors: []
-          };
+          // Process the data
+          await saveContactsToFirestore(mappedData);
 
-          // First, get existing contacts to check for duplicates
-          const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
-          const existingContactsSnap = await getDocs(contactsRef);
-          const existingContacts = new Map();
-          
-          existingContactsSnap.forEach(doc => {
-            const contact = doc.data();
-            // Create more unique key using multiple identifiers
-            const key = [
-              contact.student_name.toLowerCase(),
-              contact.grade.toLowerCase(),
-              contact.mother_contact !== 'N/A' ? contact.mother_contact : '',
-              contact.father_contact !== 'N/A' ? contact.father_contact : '',
-              contact.mother_name !== 'N/A' ? contact.mother_name.toLowerCase() : '',
-              contact.father_name !== 'N/A' ? contact.father_name.toLowerCase() : ''
-            ].join('_');
-            existingContacts.set(key, contact);
+          toast({
+            title: "Import Successful",
+            description: `Successfully processed ${mappedData.length} records`,
+            variant: "success"
           });
-
-          // Process rows and collect valid contacts
-          const validContacts = [];
-          
-          data.forEach((row, index) => {
-            try {
-              // Basic validation
-              if (!row.student_name?.toString().trim()) {
-                results.errors.push(`Row ${index + 2}: Student name is required`);
-                return; // Skip this row
-              }
-
-              const grade = row.grade?.toString().trim();
-              if (!grade) {
-                results.errors.push(`Row ${index + 2}: Grade is required`);
-                return;
-              }
-
-              // Clean and prepare parent data
-              const motherName = row.mother_name?.toString().trim() || 'N/A';
-              const fatherName = row.father_name?.toString().trim() || 'N/A';
-              const motherContact = row.mother_contact?.toString().trim() || '';
-              const fatherContact = row.father_contact?.toString().trim() || '';
-
-              // Create the same unique key format for the new entry
-              const key = [
-                row.student_name.trim().toLowerCase(),
-                grade.toLowerCase(),
-                motherContact ? formatPhoneNumber(motherContact) : '',
-                fatherContact ? formatPhoneNumber(fatherContact) : '',
-                motherName !== 'N/A' ? motherName.toLowerCase() : '',
-                fatherName !== 'N/A' ? fatherName.toLowerCase() : ''
-              ].join('_');
-
-              // Check for duplicate
-              if (existingContacts.has(key)) {
-                results.duplicates++;
-                return;
-              }
-
-              // Handle parent information
-              const motherNameFormatted = motherName !== 'N/A' ? motherName : '';
-              const fatherNameFormatted = fatherName !== 'N/A' ? fatherName : '';
-
-              // Validate at least one parent has contact info
-              if (!motherContact && !fatherContact) {
-                results.errors.push(`Row ${index + 2}: At least one parent contact is required for ${row.student_name}`);
-                return;
-              }
-
-              // Determine primary contact
-              let primaryContact = 'mother';
-              if (!motherContact && fatherContact) {
-                primaryContact = 'father';
-              }
-
-              const contact = {
-                student_name: row.student_name.trim(),
-                grade: grade.toUpperCase(),
-                device_id: row.device_id?.toString().trim() || '',
-                imei_number: row.imei_number?.toString() || '',
-                mother_name: motherNameFormatted,
-                mother_contact: motherContact ? formatPhoneNumber(motherContact) : 'N/A',
-                father_name: fatherNameFormatted,
-                father_contact: fatherContact ? formatPhoneNumber(fatherContact) : 'N/A',
-                primary_contact: primaryContact,
-                createdAt: new Date(),
-                updatedAt: new Date()
-              };
-
-              validContacts.push(contact);
-              results.success++;
-
-            } catch (error) {
-              results.errors.push(`Row ${index + 2}: ${error.message}`);
-            }
-          });
-
-          // Save valid contacts
-          if (validContacts.length > 0) {
-            await saveContactsToFirestore(validContacts);
-          }
-
-          // Show results in dialog instead of toast
-          setImportResults({
-            success: results.success,
-            duplicates: results.duplicates,
-            errors: results.errors
-          });
-
-          fetchContacts(); // Refresh the list
 
         } catch (error) {
           console.error('Processing error:', error);
-          setError(error.message);
           toast({
             title: "Error",
             description: error.message,
             variant: "destructive"
           });
-        } finally {
-          setIsLoading(false);
         }
       };
 
@@ -332,22 +288,21 @@ function Contacts() {
 
     } catch (error) {
       console.error('Upload error:', error);
-      setError(error.message);
-      setIsLoading(false);
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
+      // Reset file input
+      event.target.value = '';
     }
-
-    // Reset file input
-    event.target.value = '';
   };
 
   const validateImportData = (data) => {
     const requiredFields = [
-      'student_name', 
+      'learner_name', 
       'grade', 
       'device_id', 
       'imei_number',
@@ -417,7 +372,7 @@ function Contacts() {
     try {
       // Format data to match template structure
       const formattedData = contacts.map(contact => ({
-        student_name: contact.student_name,
+        learner_name: contact.learner_name,
         grade: contact.grade,
         device_id: contact.device_id || '',
         imei_number: contact.imei_number || '',
@@ -433,7 +388,7 @@ function Contacts() {
       
       // Set the same column widths as template
       const wscols = [
-        { wch: 20 }, // student_name
+        { wch: 20 }, // learner_name
         { wch: 8 },  // grade
         { wch: 15 }, // device_id
         { wch: 20 }, // imei_number
@@ -448,7 +403,7 @@ function Contacts() {
       // Add header row styling to match template
       XLSX.utils.sheet_add_aoa(worksheet, [
         [
-          'student_name',
+          'learner_name',
           'grade',
           'device_id',
           'imei_number',
@@ -496,15 +451,10 @@ function Contacts() {
       // Delete from contacts collection
       batch.delete(contactRef)
       
-      // If contact has device, delete from devices collection
-      if (contactData.device_id) {
-        const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices')
-        const deviceQuery = query(devicesRef, where('device_id', '==', contactData.device_id))
-        const deviceSnap = await getDocs(deviceQuery)
-        
-        deviceSnap.docs.forEach(doc => {
-          batch.delete(doc.ref)
-        })
+      // If contact has device_ref, delete from devices collection
+      if (contactData.device_ref) {
+        const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', contactData.device_ref)
+        batch.delete(deviceRef)
       }
       
       await batch.commit()
@@ -512,9 +462,20 @@ function Contacts() {
       // Update local state
       setContacts(prev => prev.filter(c => c.id !== contactId))
       setDeleteDialog({ open: false, contactId: null })
+
+      toast({
+        title: "Contact Deleted",
+        description: "Contact and associated device have been deleted",
+        variant: "success"
+      });
+
     } catch (error) {
       console.error('Error deleting contact:', error)
-      setError('Failed to delete contact')
+      toast({
+        title: "Error",
+        description: "Failed to delete contact: " + error.message,
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false)
     }
@@ -526,7 +487,7 @@ function Contacts() {
       if (contact.imei_number) {
         const imeiString = contact.imei_number.toString()
         if (!/^\d{15}$/.test(imeiString.padStart(15, '0'))) {
-          throw new Error(`Invalid IMEI format for student ${contact.student_name}. IMEI must be 15 digits.`)
+          throw new Error(`Invalid IMEI format for student ${contact.learner_name}. IMEI must be 15 digits.`)
         }
       }
       
@@ -543,19 +504,32 @@ function Contacts() {
     return ['all', ...Array.from(grades).sort()];
   };
 
-  // Add this function to filter contacts
-  const filteredContacts = contacts.filter(contact => {
-    const matchesSearch = searchTerm === '' || 
-      contact.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.mother_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.father_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.mother_contact.includes(searchTerm) ||
-      contact.father_contact.includes(searchTerm);
+  // Update the filteredContacts logic
+  const filteredContacts = contacts
+    .filter(contact => {
+      const matchesSearch = searchTerm === '' || 
+        contact.learner_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.mother_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.father_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.mother_contact.includes(searchTerm) ||
+        contact.father_contact.includes(searchTerm);
 
-    const matchesGrade = selectedGrade === 'all' || contact.grade === selectedGrade;
+      const matchesGrade = selectedGrade === 'all' || contact.grade === selectedGrade;
 
-    return matchesSearch && matchesGrade;
-  });
+      return matchesSearch && matchesGrade;
+    })
+    .sort((a, b) => {
+      // First try to sort numerically
+      const gradeA = parseInt(a.grade);
+      const gradeB = parseInt(b.grade);
+      
+      if (!isNaN(gradeA) && !isNaN(gradeB)) {
+        return gradeA - gradeB;
+      }
+      
+      // If not numbers, sort alphabetically
+      return a.grade.localeCompare(b.grade);
+    });
 
   // Add function to handle contact update
   const handleUpdateContact = async (updatedContact) => {
@@ -591,11 +565,59 @@ function Contacts() {
     }
   };
 
+  // Add this function to handle bulk deletion
+  const handleDeleteAll = async (grade) => {
+    try {
+      setIsLoading(true);
+      const batch = writeBatch(db);
+      
+      // Get all contacts for the selected grade
+      const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
+      const gradeQuery = query(contactsRef, where('grade', '==', grade));
+      const querySnapshot = await getDocs(gradeQuery);
+      
+      // Add delete operations to batch
+      querySnapshot.forEach((docSnapshot) => {
+        const contactData = docSnapshot.data();
+        
+        // Delete contact
+        batch.delete(docSnapshot.ref);
+        
+        // If contact has device, delete from devices collection
+        if (contactData.device_id) {
+          const deviceRef = doc(collection(db, 'schools', SCHOOL_ID, 'devices'), contactData.device_id);
+          batch.delete(deviceRef);
+        }
+      });
+      
+      await batch.commit();
+      
+      // Update local state
+      setContacts(prev => prev.filter(c => c.grade !== grade));
+      setDeleteAllDialog({ open: false, grade: null });
+      
+      toast({
+        title: "Contacts Deleted",
+        description: `All contacts for Grade ${grade} have been deleted`,
+        variant: "success"
+      });
+    } catch (error) {
+      console.error('Error deleting contacts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete contacts: " + error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Student Device Management</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Learner Management</h1>
         <Button 
           variant="outline" 
           onClick={downloadTemplate}
@@ -626,7 +648,7 @@ function Contacts() {
                 className="hidden"
               />
               <Upload className="w-4 h-4" />
-              Import Students
+              Import Learners
             </label>
           </div>
           <Button 
@@ -660,17 +682,28 @@ function Contacts() {
             </button>
           )}
         </div>
-        <select
-          value={selectedGrade}
-          onChange={(e) => setSelectedGrade(e.target.value)}
-          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-        >
-          {getUniqueGrades().map(grade => (
-            <option key={grade} value={grade}>
-              {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-            </option>
-          ))}
-        </select>
+        <div className="flex gap-3">
+          <select
+            value={selectedGrade}
+            onChange={(e) => setSelectedGrade(e.target.value)}
+            className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+          >
+            {getUniqueGrades().map(grade => (
+              <option key={grade} value={grade}>
+                {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+              </option>
+            ))}
+          </select>
+          {selectedGrade !== 'all' && (
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteAllDialog({ open: true, grade: selectedGrade })}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Delete All
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Contacts Table */}
@@ -681,7 +714,7 @@ function Contacts() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    Student
+                    Learner
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Grade
@@ -709,7 +742,7 @@ function Contacts() {
                       onClick={() => setEditContact(contact)}
                     >
                       <td className="px-4 py-3 whitespace-nowrap text-sm">
-                        <div className="font-medium text-gray-900">{contact.student_name}</div>
+                        <div className="font-medium text-gray-900">{contact.learner_name}</div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                         {contact.grade}
@@ -864,13 +897,13 @@ function Contacts() {
               <div className="grid gap-6 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">Student Name</label>
+                    <label className="text-sm font-medium text-gray-700">Learner Name</label>
                     <input
                       type="text"
-                      value={editContact.student_name}
+                      value={editContact.learner_name}
                       onChange={(e) => setEditContact({
                         ...editContact,
-                        student_name: e.target.value
+                        learner_name: e.target.value
                       })}
                       className="w-full px-3 py-2 border rounded-md"
                       required
@@ -989,6 +1022,32 @@ function Contacts() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Add the Delete All Confirmation Dialog */}
+      <AlertDialog 
+        open={deleteAllDialog.open} 
+        onOpenChange={(open) => setDeleteAllDialog({ open, grade: null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete All Contacts</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete all contacts for Grade {deleteAllDialog.grade}?
+              This will also delete associated device information.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDeleteAll(deleteAllDialog.grade)}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Delete All
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isLoading && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center">
