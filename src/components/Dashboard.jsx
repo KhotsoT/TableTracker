@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { AlertTriangle, History, MapPin, CheckCircle, Tablet, Users, Wallet } from 'lucide-react'
+import { AlertTriangle, History, MapPin, CheckCircle, Tablet, Users, Wallet, Battery, Wifi } from 'lucide-react'
 import { Card } from './ui/card'
 import { db, SCHOOL_ID, SCHOOL_NAME } from '../config/firebase'
-import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc } from 'firebase/firestore'
+import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc, onSnapshot, where } from 'firebase/firestore'
 import { getSMSBalance } from '../services/smsService'
 import { PageContainer, PageHeader } from './Layout'
 import { getAuth } from 'firebase/auth'
@@ -26,9 +26,172 @@ function Dashboard() {
   const [error, setError] = useState(null)
   const [schoolExists, setSchoolExists] = useState(false)
 
+  const getDeviceStatus = async (deviceData) => {
+    if (!deviceData.imei) return false;
+    
+    try {
+      // First check our device_status collection for the most recent status
+      const statusRef = collection(db, 'device_status');
+      const statusQuery = query(
+        statusRef,
+        where('imei', '==', deviceData.imei),
+        where('timestamp', '>=', new Date(Date.now() - 5 * 60 * 1000)), // Last 5 minutes
+        orderBy('timestamp', 'desc'),
+        limit(1)
+      );
+      
+      const statusSnap = await getDocs(statusQuery);
+      
+      if (!statusSnap.empty) {
+        const latestStatus = statusSnap.docs[0].data();
+        return {
+          isActive: true,
+          batteryLevel: latestStatus.battery_level,
+          isCharging: latestStatus.is_charging,
+          networkType: latestStatus.network_type,
+          signalStrength: latestStatus.signal_strength,
+          location: latestStatus.location,
+          isOutsideGeofence: latestStatus.is_outside_geofence,
+          lastUpdate: latestStatus.timestamp?.toDate()
+        };
+      }
+
+      // If no recent status, check device heartbeat collection
+      const heartbeatRef = collection(db, 'device_heartbeats');
+      const heartbeatQuery = query(
+        heartbeatRef,
+        where('imei', '==', deviceData.imei),
+        where('timestamp', '>=', new Date(Date.now() - 5 * 60 * 1000)),
+        orderBy('timestamp', 'desc'),
+        limit(1)
+      );
+
+      const heartbeatSnap = await getDocs(heartbeatQuery);
+      
+      if (!heartbeatSnap.empty) {
+        const latestHeartbeat = heartbeatSnap.docs[0].data();
+        return {
+          isActive: true,
+          batteryLevel: latestHeartbeat.battery_level,
+          isCharging: latestHeartbeat.is_charging,
+          networkType: latestHeartbeat.network_type,
+          signalStrength: latestHeartbeat.signal_strength,
+          location: latestHeartbeat.location,
+          isOutsideGeofence: latestHeartbeat.is_outside_geofence,
+          lastUpdate: latestHeartbeat.timestamp?.toDate()
+        };
+      }
+
+      // If no recent data found in either collection, device is considered offline
+      return {
+        isActive: false,
+        lastUpdate: deviceData.last_seen?.toDate() || null
+      };
+    } catch (error) {
+      console.error('Error checking device status:', error);
+      return {
+        isActive: false,
+        error: error.message
+      };
+    }
+  };
+
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    const fetchDashboardData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // Check if user is authenticated
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (!user) {
+          throw new Error('User not authenticated');
+        }
+        
+        // Check if school exists first
+        const exists = await checkSchoolExists();
+        setSchoolExists(exists);
+        
+        if (!exists) {
+          setError('School not initialized');
+          return;
+        }
+        
+        // Fetch school info
+        const schoolRef = doc(db, 'schools', SCHOOL_ID);
+        const schoolDoc = await getDoc(schoolRef);
+        if (schoolDoc.exists()) {
+          setSchoolInfo(schoolDoc.data());
+        }
+        
+        // Set up real-time listeners
+        const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts');
+        const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices');
+        const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+        
+        // Real-time contacts listener
+        const unsubContacts = onSnapshot(contactsRef, (snapshot) => {
+          const totalStudents = snapshot.docs.length;
+          setStats(prev => ({ ...prev, totalStudents }));
+        });
+
+        // Real-time devices listener with enhanced status check
+        const unsubDevices = onSnapshot(devicesRef, async (snapshot) => {
+          const devices = snapshot.docs.map(doc => doc.data());
+          const deviceStatuses = await Promise.all(
+            devices.map(async device => {
+              const status = await getDeviceStatus(device);
+              return {
+                ...device,
+                ...status
+              };
+            })
+          );
+          
+          const activeDevices = deviceStatuses.filter(d => d.isActive);
+          
+          setStats(prev => ({
+            ...prev,
+            totalTablets: devices.length,
+            activeTablets: activeDevices.length,
+            activeDevices: activeDevices.length,
+            deviceStatuses // Store full status information
+          }));
+        });
+
+        // Real-time alerts listener
+        const alertsQuery = query(alertsRef, orderBy('createdAt', 'desc'), limit(10));
+        const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
+          const activity = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            time: formatTime(doc.data().createdAt?.toDate())
+          }));
+          setRecentActivity(activity);
+        });
+
+        // Fetch SMS balance
+        const smsBalance = await getSMSBalance();
+        setStats(prev => ({ ...prev, smsCredit: smsBalance }));
+        
+        setIsLoading(false);
+
+        // Cleanup function
+        return () => {
+          unsubContacts();
+          unsubDevices();
+          unsubAlerts();
+        };
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        setError(error.message);
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
 
   const checkSchoolExists = async () => {
     try {
@@ -38,92 +201,6 @@ function Dashboard() {
     } catch (error) {
       console.error('Error checking school:', error)
       return false
-    }
-  }
-
-  const fetchDashboardData = async () => {
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      // Check if user is authenticated
-      const auth = getAuth()
-      const user = auth.currentUser
-      if (!user) {
-        throw new Error('User not authenticated')
-      }
-      
-      // Check if school exists first
-      const exists = await checkSchoolExists()
-      setSchoolExists(exists)
-      
-      if (!exists) {
-        setError('School not initialized')
-        return
-      }
-      
-      // Fetch school info
-      const schoolRef = doc(db, 'schools', SCHOOL_ID)
-      const schoolDoc = await getDoc(schoolRef)
-      if (schoolDoc.exists()) {
-        setSchoolInfo(schoolDoc.data())
-      }
-      
-      // Fetch contacts for student count
-      const contactsRef = collection(db, 'schools', SCHOOL_ID, 'contacts')
-      const contactsQuery = query(contactsRef)
-      const contactsSnap = await getDocs(contactsQuery)
-      const totalStudents = contactsSnap.docs.length
-      
-      // Fetch devices from devices collection
-      const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices')
-      const devicesQuery = query(devicesRef)
-      const devicesSnap = await getDocs(devicesQuery)
-      const devices = devicesSnap.docs.map(doc => {
-        const data = doc.data()
-        const lastSeen = data.last_seen?.toDate() || new Date(0)
-        const timeDiff = Date.now() - lastSeen.getTime()
-        const minutesDiff = Math.floor(timeDiff / (1000 * 60))
-        
-        return {
-          ...data,
-          isActive: minutesDiff <= 30 && !data.is_outside_geofence
-        }
-      })
-      
-      console.log('Devices from collection:', devices)
-      
-      // Fetch SMS balance first
-      const smsBalance = await getSMSBalance()
-      console.log('Fetched SMS balance:', smsBalance)
-      
-      // Update all stats at once
-      setStats({
-        totalTablets: devices.length,
-        activeTablets: devices.filter(d => d.isActive).length,
-        totalStudents,
-        activeDevices: devices.filter(d => d.isActive).length,
-        smsCredit: smsBalance
-      })
-      
-      // Fetch alerts
-      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts')
-      const alertsQuery = query(alertsRef, orderBy('createdAt', 'desc'), limit(10))
-      const alertsSnap = await getDocs(alertsQuery)
-      
-      // Format recent activity
-      const activity = alertsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        time: formatTime(doc.data().createdAt?.toDate())
-      }))
-      setRecentActivity(activity)
-      
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error)
-      setError(error.message)
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -151,6 +228,62 @@ function Dashboard() {
       console.error('Error initializing school:', error)
     }
   }
+
+  const DeviceStatusCard = ({ device }) => {
+    return (
+      <div className="p-4 border-b last:border-b-0 hover:bg-gray-50">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h3 className="font-medium text-gray-900">{device.device_id}</h3>
+            <p className="text-sm text-gray-500">{device.learner_name} - Grade {device.grade}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {device.isActive ? (
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                Active
+              </span>
+            ) : (
+              <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+                Offline
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4 mt-3">
+          <div className="flex items-center gap-2">
+            <Battery className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600">
+              {device.batteryLevel}% {device.isCharging && '(Charging)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600">
+              {device.networkType} ({device.signalStrength}%)
+            </span>
+          </div>
+        </div>
+        
+        {device.location && (
+          <div className="flex items-center gap-2 mt-2">
+            <MapPin className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600">{device.location}</span>
+            {device.isOutsideGeofence && (
+              <span className="flex items-center gap-1 text-xs text-red-600">
+                <AlertTriangle className="w-3 h-3" />
+                Outside Geofence
+              </span>
+            )}
+          </div>
+        )}
+        
+        <div className="text-xs text-gray-400 mt-2">
+          Last updated: {formatTime(device.lastUpdate)}
+        </div>
+      </div>
+    );
+  };
 
   if (isLoading) {
     return <div className="p-6">Loading dashboard...</div>

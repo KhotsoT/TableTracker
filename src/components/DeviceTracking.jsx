@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Search, AlertTriangle, Clock, CheckCircle, Tablet, RefreshCw, X } from 'lucide-react';
+import { MapPin, Search, AlertTriangle, Clock, CheckCircle, Tablet, RefreshCw, X, Battery, Wifi } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 import { db, SCHOOL_ID } from '../config/firebase';
-import { collection, query, getDocs, where, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, where, orderBy, onSnapshot, doc, limit, setDoc } from 'firebase/firestore';
 import { toast } from "./ui/use-toast";
 import {
   Dialog,
@@ -23,42 +23,91 @@ function DeviceTracking() {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchDevices();
-  }, []);
-
-  const fetchDevices = async () => {
+  const addTestDevice = async () => {
     try {
-      setIsLoading(true);
-      setError(null);
+      const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', 'iPad-002');
+      await setDoc(deviceRef, {
+        device_id: 'iPad-002',
+        learner_name: 'Lintle',
+        grade: '12B',
+        imei: '355088376177131',
+        last_seen: new Date(),
+        battery_level: 85,
+        is_charging: false,
+        is_outside_geofence: false,
+        location: 'School Premises',
+        network_type: 'WiFi',
+        signal_strength: 90
+      });
+      console.log('Test device added successfully');
+    } catch (error) {
+      console.error('Error adding test device:', error);
+    }
+  };
 
-      const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices');
-      const devicesQuery = query(devicesRef, orderBy('last_seen', 'desc'));
-      const devicesSnap = await getDocs(devicesQuery);
+  useEffect(() => {
+    // Set up real-time listener for devices
+    const devicesRef = collection(db, 'schools', SCHOOL_ID, 'devices');
+    const devicesQuery = query(devicesRef);
+    
+    console.log('Setting up devices listener...', { SCHOOL_ID });
+    
+    const unsubscribe = onSnapshot(devicesQuery, async (snapshot) => {
+      console.log('Received devices update:', snapshot.docs.length, 'devices');
       
+      // If no devices exist, add a test device
+      if (snapshot.docs.length === 0) {
+        console.log('No devices found, adding test device...');
+        await addTestDevice();
+        return;
+      }
+
       const devicesList = [];
       
-      for (const deviceDoc of devicesSnap.docs) {
-        const deviceData = deviceDoc.data();
+      for (const doc of snapshot.docs) {
+        const deviceData = doc.data();
+        console.log('Device data:', deviceData);
         
-        // Calculate device status based on last_seen timestamp
+        // Basic device status calculation
         const lastSeen = deviceData.last_seen?.toDate() || new Date(0);
         const timeDiff = Date.now() - lastSeen.getTime();
         const minutesDiff = Math.floor(timeDiff / (1000 * 60));
         
-        let status = 'active';
-        if (minutesDiff > 30) {
-          status = 'offline';
+        let status = 'offline';
+        let statusDetails = [];
+
+        // If device was seen in last 30 minutes, consider it active
+        if (minutesDiff <= 30) {
+          status = deviceData.is_outside_geofence ? 'alert' : 'active';
+        }
+
+        // Add basic device info
+        if (deviceData.battery_level !== undefined) {
+          if (deviceData.battery_level <= 20) {
+            statusDetails.push('Low battery');
+          }
+          if (deviceData.is_charging) {
+            statusDetails.push('Charging');
+          }
+        }
+
+        if (deviceData.network_type) {
+          statusDetails.push(deviceData.network_type);
+        }
+
+        if (status === 'offline') {
+          statusDetails.push(`Last seen ${formatLastSeen(lastSeen)}`);
         } else if (deviceData.is_outside_geofence) {
-          status = 'alert';
+          statusDetails.push('Outside school premises');
         }
 
         devicesList.push({
-          id: deviceDoc.id,
+          id: doc.id,
           device_id: deviceData.device_id,
           learner_name: deviceData.learner_name,
           grade: deviceData.grade,
-          status: status,
+          status,
+          statusDetails: statusDetails.join(' • '),
           location: deviceData.location || 'Unknown',
           last_seen: lastSeen,
           imei: deviceData.imei,
@@ -66,12 +115,16 @@ function DeviceTracking() {
           is_charging: deviceData.is_charging || false,
           is_outside_geofence: deviceData.is_outside_geofence || false,
           latitude: deviceData.latitude,
-          longitude: deviceData.longitude
+          longitude: deviceData.longitude,
+          network_type: deviceData.network_type,
+          signal_strength: deviceData.signal_strength
         });
       }
 
+      console.log('Processed devices:', devicesList);
       setDevices(devicesList);
-    } catch (error) {
+      setIsLoading(false);
+    }, (error) => {
       console.error('Error fetching devices:', error);
       setError('Failed to fetch devices: ' + error.message);
       toast({
@@ -79,10 +132,11 @@ function DeviceTracking() {
         description: "Failed to fetch devices: " + error.message,
         variant: "destructive"
       });
-    } finally {
       setIsLoading(false);
-    }
-  };
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const filteredDevices = devices.filter(device => {
     const matchesSearch = searchQuery === '' || 
@@ -94,6 +148,17 @@ function DeviceTracking() {
     const matchesGrade = selectedGrade === 'all' || device.grade === selectedGrade;
 
     return matchesSearch && matchesStatus && matchesGrade;
+  }).sort((a, b) => {
+    // Extract numeric part and section part of grade
+    const [, numA, sectionA = ''] = a.grade.match(/(\d+)([A-Z]*)/) || [null, '0', ''];
+    const [, numB, sectionB = ''] = b.grade.match(/(\d+)([A-Z]*)/) || [null, '0', ''];
+    
+    // Compare grade numbers first
+    const gradeCompare = parseInt(numA) - parseInt(numB);
+    if (gradeCompare !== 0) return gradeCompare;
+    
+    // If same grade number, compare sections
+    return sectionA.localeCompare(sectionB);
   });
 
   const getStatusIcon = (status) => {
@@ -138,11 +203,22 @@ function DeviceTracking() {
     const details = [];
 
     if (device.battery_level !== 'Unknown') {
-      details.push(`Battery: ${device.battery_level}%${device.is_charging ? ' (Charging)' : ''}`);
+      const batteryText = `Battery: ${device.battery_level}%${device.is_charging ? ' (Charging)' : ''}`;
+      const batteryStatus = device.battery_level <= 20 ? `⚠️ ${batteryText}` : batteryText;
+      details.push(batteryStatus);
+    }
+
+    if (device.network_type) {
+      const networkInfo = `${device.network_type}${device.signal_strength ? ` (${device.signal_strength}%)` : ''}`;
+      details.push(networkInfo);
     }
 
     if (device.location) {
       details.push(device.location);
+    }
+
+    if (device.is_moving) {
+      details.push('📍 In motion');
     }
 
     if (device.is_outside_geofence) {
@@ -163,6 +239,58 @@ function DeviceTracking() {
     })];
   };
 
+  const DeviceStatusCard = ({ device }) => {
+    return (
+      <Card className="bg-white overflow-hidden hover:bg-gray-50 transition-colors">
+        <div className="p-4">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <h3 className="font-medium text-gray-900">{device.device_id}</h3>
+              <p className="text-sm text-gray-500">{device.learner_name} - Grade {device.grade}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={getStatusBadge(device.status)}>
+                {device.status === 'active' ? 'Active' : device.status === 'alert' ? 'Alert' : 'Offline'}
+              </span>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="flex items-center gap-2">
+              <Battery className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-600">
+                {device.battery_level}% {device.is_charging && '(Charging)'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-600">
+                {device.network_type} ({device.signal_strength}%)
+              </span>
+            </div>
+          </div>
+          
+          {device.location && (
+            <div className="flex items-center gap-2 mt-2">
+              <MapPin className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-600">{device.location}</span>
+              {device.is_outside_geofence && (
+                <span className="flex items-center gap-1 text-xs text-red-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  Outside Geofence
+                </span>
+              )}
+            </div>
+          )}
+          
+          <div className="text-xs text-gray-400 mt-2">
+            Last seen: {formatLastSeen(device.last_seen)}
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
@@ -174,7 +302,11 @@ function DeviceTracking() {
           </div>
           <Button
             variant="secondary"
-            onClick={fetchDevices}
+            onClick={() => {
+              setIsLoading(true);
+              setError(null);
+              fetchDevices();
+            }}
             className="flex items-center gap-2 bg-white shadow-sm border border-gray-200"
             disabled={isLoading}
           >
@@ -247,50 +379,29 @@ function DeviceTracking() {
         </div>
       </Card>
 
-      {/* Devices List */}
-      <Card className="divide-y divide-gray-100">
-        {filteredDevices.map((device) => (
-          <div 
-            key={device.id} 
-            className="p-4 hover:bg-gray-50 cursor-pointer"
-            onClick={() => setSelectedDevice(device)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
-                <Tablet className="w-5 h-5 text-blue-500" />
-                <div>
-                  <h3 className="text-sm font-medium text-gray-900">{device.device_id}</h3>
-                  <p className="text-sm text-gray-500">
-                    {device.learner_name} - Grade {device.grade}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={getStatusBadge(device.status)}>
-                  {device.status.charAt(0).toUpperCase() + device.status.slice(1)}
-                </span>
-                <Button 
-                  variant="secondary" 
-                  size="sm"
-                  className="bg-white shadow-sm border border-gray-200 hover:bg-gray-50"
-                >
-                  Details
-                </Button>
-              </div>
-            </div>
-            <div className="ml-8 text-sm text-gray-500">
-              <p>{getDeviceDetails(device)}</p>
-              <p className="text-xs mt-1">Last seen: {formatLastSeen(device.last_seen)}</p>
-            </div>
-          </div>
-        ))}
-        {filteredDevices.length === 0 && (
-          <div className="p-8 text-center">
-            <Tablet className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No devices found</p>
-          </div>
-        )}
-      </Card>
+      {/* Device Grid */}
+      {isLoading ? (
+        <div className="text-center py-12">
+          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-gray-400" />
+          <p className="mt-2 text-gray-600">Loading devices...</p>
+        </div>
+      ) : error ? (
+        <div className="text-center py-12">
+          <AlertTriangle className="w-6 h-6 mx-auto text-red-500" />
+          <p className="mt-2 text-red-600">{error}</p>
+        </div>
+      ) : filteredDevices.length === 0 ? (
+        <div className="text-center py-12">
+          <Tablet className="w-6 h-6 mx-auto text-gray-400" />
+          <p className="mt-2 text-gray-600">No devices found</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredDevices.map((device) => (
+            <DeviceStatusCard key={device.id} device={device} />
+          ))}
+        </div>
+      )}
 
       {/* Device Details Dialog */}
       {selectedDevice && (

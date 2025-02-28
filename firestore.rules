@@ -2,19 +2,40 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isSignedIn() {
+    // Base rules
+    function isAuthenticated() {
       return request.auth != null;
     }
     
-    // School collection and all subcollections
-    match /schools/{schoolId}/{document=**} {
-      allow read, write: if isSignedIn();
+    function isSchoolAdmin(schoolId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/schools/$(schoolId)/admins/$(request.auth.uid));
     }
-    
-    // Lock down everything else
-    match /{document=**} {
-      allow read, write: if false;
+
+    // Device status collection rules
+    match /device_status/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/schools/*/devices/$(request.resource.data.imei));
+    }
+
+    // Device heartbeats collection rules
+    match /device_heartbeats/{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+        exists(/databases/$(database)/documents/schools/*/devices/$(request.resource.data.imei));
+    }
+
+    // School specific rules
+    match /schools/{schoolId} {
+      allow read: if isAuthenticated();
+      allow write: if isSchoolAdmin(schoolId);
+
+      // Devices subcollection
+      match /devices/{deviceId} {
+        allow read: if isAuthenticated();
+        allow write: if isSchoolAdmin(schoolId);
+      }
     }
   }
 }
