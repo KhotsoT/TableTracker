@@ -7,12 +7,150 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ".
 import { db, SCHOOL_ID } from '../config/firebase';
 import { collection, query, getDocs, where, orderBy, onSnapshot, doc, limit, setDoc } from 'firebase/firestore';
 import { toast } from "./ui/use-toast";
+import { startDeviceMonitoring, getCurrentDeviceStatus } from '../services/deviceService';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "./ui/dialog";
+import 'leaflet/dist/leaflet.css';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { SCHOOL_CONFIG } from '../config/school';
+
+// Fix Leaflet default icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  tooltipAnchor: [16, -28],
+  shadowSize: [41, 41]
+});
+
+// Add LocationStatus component
+const LocationStatus = () => {
+  const [permissionStatus, setPermissionStatus] = useState('checking');
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const checkPermission = async () => {
+      try {
+        // Check if geolocation is supported
+        if (!navigator.geolocation) {
+          setError('Geolocation is not supported by your browser');
+          return;
+        }
+
+        // Check permission status
+        if (navigator.permissions) {
+          const result = await navigator.permissions.query({ name: 'geolocation' });
+          setPermissionStatus(result.state);
+
+          // Listen for changes
+          result.addEventListener('change', () => {
+            setPermissionStatus(result.state);
+          });
+        }
+
+        // Test getting location
+        navigator.geolocation.getCurrentPosition(
+          () => setPermissionStatus('granted'),
+          (error) => {
+            console.error('Geolocation error:', error);
+            if (error.code === 1) {
+              setPermissionStatus('denied');
+            } else if (error.code === 2) {
+              setError('Location is not available');
+            } else if (error.code === 3) {
+              setError('Location request timed out');
+            }
+          }
+        );
+      } catch (err) {
+        console.error('Permission check error:', err);
+        setError(err.message);
+      }
+    };
+
+    checkPermission();
+  }, []);
+
+  if (error) {
+    return (
+      <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2">
+        <AlertTriangle className="w-5 h-5" />
+        <div>
+          <p className="font-medium">Location Error</p>
+          <p className="text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (permissionStatus === 'denied') {
+    return (
+      <div className="bg-yellow-50 text-yellow-800 p-4 rounded-lg">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5" />
+          <p className="font-medium">Location Access Required</p>
+        </div>
+        <p className="mt-2 text-sm">
+          This app needs location access to track devices. Please enable location access:
+        </p>
+        <ol className="mt-2 text-sm list-decimal list-inside">
+          <li>Click the lock/info icon (🔒) in your browser's address bar</li>
+          <li>Click on "Site settings" or "Permissions"</li>
+          <li>Find "Location" and change it to "Allow"</li>
+          <li>Refresh the page</li>
+        </ol>
+      </div>
+    );
+  }
+
+  if (permissionStatus === 'prompt') {
+    return (
+      <div className="bg-blue-50 text-blue-800 p-4 rounded-lg flex items-center gap-2">
+        <MapPin className="w-5 h-5" />
+        <p>Please allow location access when prompted to enable device tracking.</p>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+// Add this helper for position smoothing
+const smoothPosition = (() => {
+  const positions = [];
+  const MAX_POSITIONS = 5;
+
+  return (newPosition) => {
+    positions.push(newPosition);
+    if (positions.length > MAX_POSITIONS) {
+      positions.shift();
+    }
+
+    // Calculate weighted average, giving more weight to newer positions
+    const totalWeight = positions.reduce((sum, _, index) => sum + (index + 1), 0);
+    const smoothed = positions.reduce((acc, pos, index) => {
+      const weight = (index + 1) / totalWeight;
+      return {
+        latitude: acc.latitude + (pos.latitude * weight),
+        longitude: acc.longitude + (pos.longitude * weight)
+      };
+    }, { latitude: 0, longitude: 0 });
+
+    return smoothed;
+  };
+})();
 
 function DeviceTracking() {
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -25,23 +163,100 @@ function DeviceTracking() {
 
   const addTestDevice = async () => {
     try {
-      const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', 'iPad-002');
-      await setDoc(deviceRef, {
+      console.log('Starting addTestDevice process...');
+      
+      // Get current device status
+      console.log('Fetching current device status...');
+      const deviceStatus = await getCurrentDeviceStatus();
+      console.log('Received device status:', deviceStatus);
+      
+      // Create device data with consistent field names and proper geofence
+      const deviceData = {
         device_id: 'iPad-002',
         learner_name: 'Lintle',
         grade: '12B',
         imei: '355088376177131',
         last_seen: new Date(),
-        battery_level: 85,
-        is_charging: false,
+        battery_level: deviceStatus.batteryLevel,
+        is_charging: deviceStatus.isCharging,
         is_outside_geofence: false,
         location: 'School Premises',
-        network_type: 'WiFi',
-        signal_strength: 90
+        network_type: deviceStatus.networkType,
+        signal_strength: deviceStatus.signalStrength,
+        // Add initial position data if available
+        latitude: deviceStatus.latitude,
+        longitude: deviceStatus.longitude,
+        accuracy: deviceStatus.accuracy,
+        // Add geofence configuration
+        geofence: SCHOOL_CONFIG.location
+      };
+
+      console.log('Created device data with position and geofence:', deviceData);
+
+      // Add device to Firestore with the same field names
+      const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', deviceData.device_id);
+      console.log('Adding device to Firestore...');
+      await setDoc(deviceRef, deviceData);
+      console.log('Device added to Firestore successfully');
+      
+      console.log('Starting device monitoring with data:', deviceData);
+      
+      // Start monitoring the device with consistent field names
+      const monitoringData = {
+        ...deviceData,
+        batteryLevel: deviceData.battery_level,
+        isCharging: deviceData.is_charging,
+        networkType: deviceData.network_type,
+        signalStrength: deviceData.signal_strength
+      };
+      console.log('Monitoring data:', monitoringData);
+      
+      const stopMonitoring = startDeviceMonitoring(monitoringData);
+      
+      // Store the cleanup function
+      window.deviceMonitoringCleanup = stopMonitoring;
+
+      toast({
+        title: "Success",
+        description: "Test device added and monitoring started",
+        variant: "default"
       });
-      console.log('Test device added successfully');
+
+      console.log('Test device setup completed successfully');
     } catch (error) {
-      console.error('Error adding test device:', error);
+      console.error('Error in addTestDevice:', error);
+      console.log('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      toast({
+        title: "Error",
+        description: "Failed to add test device: " + error.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const refreshDevice = async () => {
+    try {
+      setIsLoading(true);
+      const deviceStatus = await getCurrentDeviceStatus();
+      await addTestDevice();
+      toast({
+        title: "Success",
+        description: "Device status refreshed successfully",
+      });
+    } catch (error) {
+      console.error('Error refreshing device:', error);
+      toast({
+        title: "Error",
+        description: "Failed to refresh device: " + error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -66,7 +281,7 @@ function DeviceTracking() {
       
       for (const doc of snapshot.docs) {
         const deviceData = doc.data();
-        console.log('Device data:', deviceData);
+        console.log('Raw device data:', deviceData);
         
         // Basic device status calculation
         const lastSeen = deviceData.last_seen?.toDate() || new Date(0);
@@ -81,9 +296,10 @@ function DeviceTracking() {
           status = deviceData.is_outside_geofence ? 'alert' : 'active';
         }
 
-        // Add basic device info
-        if (deviceData.battery_level !== undefined) {
-          if (deviceData.battery_level <= 20) {
+        // Process battery info
+        const batteryLevel = deviceData.battery_level !== undefined ? deviceData.battery_level : 'Unknown';
+        if (batteryLevel !== 'Unknown') {
+          if (batteryLevel <= 20) {
             statusDetails.push('Low battery');
           }
           if (deviceData.is_charging) {
@@ -91,10 +307,15 @@ function DeviceTracking() {
           }
         }
 
+        // Process network info
         if (deviceData.network_type) {
-          statusDetails.push(deviceData.network_type);
+          const networkInfo = deviceData.signal_strength 
+            ? `${deviceData.network_type} (${deviceData.signal_strength}%)`
+            : deviceData.network_type;
+          statusDetails.push(networkInfo);
         }
 
+        // Process location and geofence info
         if (status === 'offline') {
           statusDetails.push(`Last seen ${formatLastSeen(lastSeen)}`);
         } else if (deviceData.is_outside_geofence) {
@@ -103,20 +324,20 @@ function DeviceTracking() {
 
         devicesList.push({
           id: doc.id,
-          device_id: deviceData.device_id,
-          learner_name: deviceData.learner_name,
-          grade: deviceData.grade,
+          device_id: deviceData.device_id || 'Unknown Device',
+          learner_name: deviceData.learner_name || 'Unknown Learner',
+          grade: deviceData.grade || 'Unknown Grade',
           status,
           statusDetails: statusDetails.join(' • '),
           location: deviceData.location || 'Unknown',
           last_seen: lastSeen,
-          imei: deviceData.imei,
-          battery_level: deviceData.battery_level || 'Unknown',
+          imei: deviceData.imei || 'Unknown',
+          battery_level: batteryLevel,
           is_charging: deviceData.is_charging || false,
           is_outside_geofence: deviceData.is_outside_geofence || false,
           latitude: deviceData.latitude,
           longitude: deviceData.longitude,
-          network_type: deviceData.network_type,
+          network_type: deviceData.network_type || 'Unknown',
           signal_strength: deviceData.signal_strength
         });
       }
@@ -241,12 +462,26 @@ function DeviceTracking() {
 
   const DeviceStatusCard = ({ device }) => {
     return (
-      <Card className="bg-white overflow-hidden hover:bg-gray-50 transition-colors">
+      <Card 
+        className="bg-white overflow-hidden hover:bg-gray-50 transition-colors cursor-pointer"
+        onClick={() => {
+          console.log('Selected device coordinates:', {
+            latitude: device.latitude,
+            longitude: device.longitude,
+            accuracy: device.accuracy
+          });
+          setSelectedDevice(device);
+        }}
+      >
         <div className="p-4">
           <div className="flex justify-between items-start mb-2">
             <div>
               <h3 className="font-medium text-gray-900">{device.device_id}</h3>
-              <p className="text-sm text-gray-500">{device.learner_name} - Grade {device.grade}</p>
+              <p className="text-sm text-gray-500">
+                {device.learner_name} - Grade {device.grade}
+                <br />
+                <span className="text-xs text-gray-400">ID: {device.device_id}</span>
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <span className={getStatusBadge(device.status)}>
@@ -257,34 +492,39 @@ function DeviceTracking() {
           
           <div className="grid grid-cols-2 gap-4 mt-3">
             <div className="flex items-center gap-2">
-              <Battery className="w-4 h-4 text-gray-400" />
+              <Battery className={`w-4 h-4 ${device.battery_level <= 20 ? 'text-red-400' : 'text-gray-400'}`} />
               <span className="text-sm text-gray-600">
-                {device.battery_level}% {device.is_charging && '(Charging)'}
+                {device.battery_level === 'Unknown' ? 'Unknown' : `${device.battery_level}%${device.is_charging ? ' (Charging)' : ''}`}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Wifi className="w-4 h-4 text-gray-400" />
               <span className="text-sm text-gray-600">
-                {device.network_type} ({device.signal_strength}%)
+                {device.network_type && device.signal_strength ? `${device.network_type} (${device.signal_strength}%)` : device.network_type || 'Unknown'}
               </span>
             </div>
           </div>
           
-          {device.location && (
-            <div className="flex items-center gap-2 mt-2">
-              <MapPin className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-600">{device.location}</span>
-              {device.is_outside_geofence && (
-                <span className="flex items-center gap-1 text-xs text-red-600">
-                  <AlertTriangle className="w-3 h-3" />
-                  Outside Geofence
-                </span>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 mt-2">
+            <MapPin className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600">{device.location || 'Unknown location'}</span>
+            {device.is_outside_geofence && (
+              <span className="flex items-center gap-1 text-xs text-red-600">
+                <AlertTriangle className="w-3 h-3" />
+                Outside Geofence
+              </span>
+            )}
+          </div>
           
           <div className="text-xs text-gray-400 mt-2">
             Last seen: {formatLastSeen(device.last_seen)}
+          </div>
+          
+          <div className="mt-3 text-xs text-blue-600 flex items-center gap-1">
+            View details
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </div>
         </div>
       </Card>
@@ -302,11 +542,7 @@ function DeviceTracking() {
           </div>
           <Button
             variant="secondary"
-            onClick={() => {
-              setIsLoading(true);
-              setError(null);
-              fetchDevices();
-            }}
+            onClick={refreshDevice}
             className="flex items-center gap-2 bg-white shadow-sm border border-gray-200"
             disabled={isLoading}
           >
@@ -315,6 +551,8 @@ function DeviceTracking() {
           </Button>
         </div>
       </div>
+
+      <LocationStatus />
 
       {error && (
         <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2">
@@ -405,12 +643,21 @@ function DeviceTracking() {
 
       {/* Device Details Dialog */}
       {selectedDevice && (
-        <Dialog open={!!selectedDevice} onOpenChange={() => setSelectedDevice(null)}>
-          <DialogContent className="sm:max-w-[600px]">
+        <Dialog 
+          open={!!selectedDevice} 
+          onOpenChange={() => setSelectedDevice(null)}
+        >
+          <DialogContent 
+            className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto"
+          >
             <DialogHeader>
-              <DialogTitle>Device Details</DialogTitle>
+              <DialogTitle>Device Details - {selectedDevice.device_id}</DialogTitle>
+              <DialogDescription>
+                Detailed information about {selectedDevice.device_id} including location, battery status, network status, and other device metrics.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4">
+              {/* Basic Info Section */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm font-medium text-gray-500">Device ID</p>
@@ -433,6 +680,7 @@ function DeviceTracking() {
                 </div>
               </div>
 
+              {/* Status Section */}
               <div>
                 <p className="text-sm font-medium text-gray-500">Status</p>
                 <div className="flex items-center gap-2 mt-1">
@@ -443,26 +691,78 @@ function DeviceTracking() {
                 </div>
               </div>
 
+              {/* Battery Section */}
               <div>
                 <p className="text-sm font-medium text-gray-500">Battery Status</p>
-                <p className="text-base text-gray-900">
-                  {selectedDevice.battery_level === 'Unknown' ? 
-                    'Unknown' : 
-                    `${selectedDevice.battery_level}%${selectedDevice.is_charging ? ' (Charging)' : ''}`
-                  }
-                </p>
+                <div className="flex items-center gap-2">
+                  <Battery className={`w-4 h-4 ${selectedDevice.battery_level <= 20 ? 'text-red-500' : 'text-green-500'}`} />
+                  <p className="text-base text-gray-900">
+                    {selectedDevice.battery_level === 'Unknown' ? 
+                      'Unknown' : 
+                      `${selectedDevice.battery_level}%${selectedDevice.is_charging ? ' (Charging)' : ''}`
+                    }
+                  </p>
+                </div>
               </div>
 
+              {/* Network Section */}
               <div>
-                <p className="text-sm font-medium text-gray-500">Location</p>
-                <p className="text-base text-gray-900">{selectedDevice.location || 'Unknown'}</p>
-                {selectedDevice.latitude && selectedDevice.longitude && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    {selectedDevice.latitude}, {selectedDevice.longitude}
+                <p className="text-sm font-medium text-gray-500">Network Status</p>
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-4 h-4 text-blue-500" />
+                  <p className="text-base text-gray-900">
+                    {selectedDevice.network_type} ({selectedDevice.signal_strength}% signal)
                   </p>
+                </div>
+              </div>
+
+              {/* Location Section with Map */}
+              <div className="space-y-2">
+                {console.log('Attempting to render map with coordinates:', {
+                  latitude: selectedDevice.latitude,
+                  longitude: selectedDevice.longitude,
+                  isDefined: selectedDevice.latitude !== undefined && selectedDevice.longitude !== undefined
+                })}
+                <p className="text-sm font-medium text-gray-500">Location</p>
+                <p className="text-base text-gray-900 flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-gray-400" />
+                  {selectedDevice.location}
+                  {selectedDevice.is_outside_geofence && (
+                    <span className="text-red-500 flex items-center gap-1">
+                      <AlertTriangle className="w-4 h-4" />
+                      Outside Geofence
+                    </span>
+                  )}
+                </p>
+                {selectedDevice.latitude !== undefined && selectedDevice.longitude !== undefined && (
+                  <div className="relative h-[300px] w-full rounded-lg overflow-hidden border border-gray-200">
+                    <MapContainer
+                      key={`${selectedDevice.latitude}-${selectedDevice.longitude}`}
+                      center={[selectedDevice.latitude, selectedDevice.longitude]}
+                      zoom={15}
+                      style={{ height: '100%', width: '100%' }}
+                      scrollWheelZoom={false}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <Marker position={[selectedDevice.latitude, selectedDevice.longitude]}>
+                        <Popup>
+                          <div className="text-sm space-y-1">
+                            <p><strong>{selectedDevice.device_id}</strong></p>
+                            <p>Last seen: {formatLastSeen(selectedDevice.last_seen)}</p>
+                            <p>Accuracy: {selectedDevice.accuracy ? `${Math.round(selectedDevice.accuracy)}m` : 'Unknown'}</p>
+                            <p>Location: {selectedDevice.location}</p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    </MapContainer>
+                  </div>
                 )}
               </div>
 
+              {/* Last Seen Section */}
               <div>
                 <p className="text-sm font-medium text-gray-500">Last Seen</p>
                 <p className="text-base text-gray-900">
