@@ -7,7 +7,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from ".
 import { db, SCHOOL_ID } from '../config/firebase';
 import { collection, query, getDocs, where, orderBy, onSnapshot, doc, limit, setDoc } from 'firebase/firestore';
 import { toast } from "./ui/use-toast";
-import { startDeviceMonitoring, getCurrentDeviceStatus } from '../services/deviceService';
+import { startDeviceMonitoring, getCurrentDeviceStatus, ACCURACY_LEVELS } from '../services/deviceService';
+import { SCHOOL_CONFIG } from '../config/school';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +21,6 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-import { SCHOOL_CONFIG } from '../config/school';
 
 // Fix Leaflet default icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -465,12 +465,16 @@ function DeviceTracking() {
       <Card 
         className="bg-white overflow-hidden hover:bg-gray-50 transition-colors cursor-pointer"
         onClick={() => {
-          console.log('Selected device coordinates:', {
+          // Use actual device coordinates without fallback to school location
+          const deviceWithLocation = {
+            ...device,
+            // Only pass through actual device coordinates
             latitude: device.latitude,
             longitude: device.longitude,
             accuracy: device.accuracy
-          });
-          setSelectedDevice(device);
+          };
+          console.log('Selected device with location:', deviceWithLocation);
+          setSelectedDevice(deviceWithLocation);
         }}
       >
         <div className="p-4">
@@ -718,15 +722,10 @@ function DeviceTracking() {
 
               {/* Location Section with Map */}
               <div className="space-y-2">
-                {console.log('Attempting to render map with coordinates:', {
-                  latitude: selectedDevice.latitude,
-                  longitude: selectedDevice.longitude,
-                  isDefined: selectedDevice.latitude !== undefined && selectedDevice.longitude !== undefined
-                })}
                 <p className="text-sm font-medium text-gray-500">Location</p>
                 <p className="text-base text-gray-900 flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-gray-400" />
-                  {selectedDevice.location}
+                  {selectedDevice.location || 'Unknown'}
                   {selectedDevice.is_outside_geofence && (
                     <span className="text-red-500 flex items-center gap-1">
                       <AlertTriangle className="w-4 h-4" />
@@ -734,7 +733,7 @@ function DeviceTracking() {
                     </span>
                   )}
                 </p>
-                {selectedDevice.latitude !== undefined && selectedDevice.longitude !== undefined && (
+                {selectedDevice.latitude && selectedDevice.longitude && selectedDevice.location !== 'School Premises' ? (
                   <div className="relative h-[300px] w-full rounded-lg overflow-hidden border border-gray-200">
                     <MapContainer
                       key={`${selectedDevice.latitude}-${selectedDevice.longitude}`}
@@ -758,6 +757,18 @@ function DeviceTracking() {
                         </Popup>
                       </Marker>
                     </MapContainer>
+                  </div>
+                ) : (
+                  <div className="h-[300px] w-full rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center">
+                    <div className="text-center p-6">
+                      <MapPin className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500 font-medium">Location Data Unavailable</p>
+                      <p className="text-sm text-gray-400 mt-1 max-w-[250px]">
+                        {selectedDevice.location === 'School Premises' 
+                          ? 'Device is at school premises. Live tracking will begin when device moves.' 
+                          : 'Waiting for device location data from service provider.'}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
