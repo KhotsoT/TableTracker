@@ -738,17 +738,19 @@ function Messages() {
                           ({msg.status.delivered} delivered, {msg.status.failed} failed)
                         </span>
                       </div>
-                      <Button 
-                        variant="outline"
-                        size="sm"
-                        className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleResendFailed(msg);
-                        }}
-                      >
-                        Resend Failed
-                      </Button>
+                      {msg.status.failed > 0 && (
+                        <Button 
+                          variant="outline"
+                          size="sm"
+                          className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResendFailed(msg);
+                          }}
+                        >
+                          Resend Failed
+                        </Button>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600">{msg.message}</p>
                   </Card>

@@ -12,30 +12,69 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/schools/$(schoolId)/admins/$(request.auth.uid));
     }
 
-    // Device status collection rules
-    match /device_status/{document=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
-        exists(/databases/$(database)/documents/schools/*/devices/$(request.resource.data.imei));
+    // Device status collection (root level)
+    match /device_status/{deviceId} {
+      allow read, write: if isAuthenticated();
     }
 
-    // Device heartbeats collection rules
-    match /device_heartbeats/{document=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
-        exists(/databases/$(database)/documents/schools/*/devices/$(request.resource.data.imei));
+    // Device heartbeats collection (root level)
+    match /device_heartbeats/{deviceId} {
+      allow read, write: if isAuthenticated();
     }
 
     // School specific rules
     match /schools/{schoolId} {
-      allow read: if isAuthenticated();
-      allow write: if isSchoolAdmin(schoolId);
+      allow read, write: if isAuthenticated();
 
-      // Devices subcollection
-      match /devices/{deviceId} {
-        allow read: if isAuthenticated();
-        allow write: if isSchoolAdmin(schoolId);
+      // All subcollections under schools
+      match /{collection}/{document=**} {
+        allow read, write: if isAuthenticated();
       }
+    }
+
+    // Allow all authenticated users to read/write alerts
+    match /alerts/{alertId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Base rules
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSchoolAdmin(schoolId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/schools/$(schoolId)/admins/$(request.auth.uid));
+    }
+
+    // Device status collection (root level)
+    match /device_status/{deviceId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Device heartbeats collection (root level)
+    match /device_heartbeats/{deviceId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // School specific rules
+    match /schools/{schoolId} {
+      allow read, write: if isAuthenticated();
+
+      // All subcollections under schools
+      match /{collection}/{document=**} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    // Allow all authenticated users to read/write alerts
+    match /alerts/{alertId} {
+      allow read, write: if isAuthenticated();
     }
   }
 }
