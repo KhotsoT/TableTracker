@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 import { db, SCHOOL_ID } from '../config/firebase';
-import { collection, query, getDocs, where, orderBy, onSnapshot, doc, limit, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, where, orderBy, onSnapshot, doc, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { toast } from "./ui/use-toast";
 import { startDeviceMonitoring, getCurrentDeviceStatus, ACCURACY_LEVELS } from '../services/deviceService';
 import { SCHOOL_CONFIG } from '../config/school';
@@ -170,59 +170,81 @@ function DeviceTracking() {
       const deviceStatus = await getCurrentDeviceStatus();
       console.log('Received device status:', deviceStatus);
       
-      // Create device data with consistent field names and proper geofence
+      // Create device data with default values
       const deviceData = {
+        // Core device info - only these are required for device identification
         device_id: 'iPad-002',
         learner_name: 'Lintle',
         grade: '12B',
         imei: '355088376177131',
-        last_seen: new Date(),
-        battery_level: deviceStatus.batteryLevel,
-        is_charging: deviceStatus.isCharging,
-        is_outside_geofence: false,
-        location: 'School Premises',
-        network_type: deviceStatus.networkType,
-        signal_strength: deviceStatus.signalStrength,
-        // Add initial position data if available
-        latitude: deviceStatus.latitude,
-        longitude: deviceStatus.longitude,
-        accuracy: deviceStatus.accuracy,
-        // Add geofence configuration
-        geofence: SCHOOL_CONFIG.location
+        last_seen: serverTimestamp(),
+        
+        // Status information - with defaults
+        battery_level: deviceStatus.batteryLevel || 0,
+        is_charging: Boolean(deviceStatus.isCharging),
+        is_outside_geofence: false, // Explicitly set default
+        location: deviceStatus.location || 'Unknown',
+        network_type: deviceStatus.networkType || 'unknown',
+        signal_strength: deviceStatus.signalStrength || 0,
+        
+        // Location data - only include if present
+        ...(deviceStatus.latitude && deviceStatus.longitude ? {
+          latitude: deviceStatus.latitude,
+          longitude: deviceStatus.longitude,
+          accuracy: deviceStatus.accuracy || 0
+        } : {}),
+        
+        // Device capabilities - with defaults
+        webgl_support: Boolean(deviceStatus.webgl_support),
+        canvas_support: Boolean(deviceStatus.canvas_support),
+        local_storage: Boolean(deviceStatus.local_storage),
+        session_storage: Boolean(deviceStatus.session_storage),
+        
+        // Browser details - with defaults
+        user_agent: deviceStatus.user_agent || 'unknown',
+        platform: deviceStatus.platform || 'unknown',
+        language: deviceStatus.language || 'unknown',
+        
+        // Screen information - only include if present
+        ...(deviceStatus.screen_width && deviceStatus.screen_height ? {
+          screen_width: deviceStatus.screen_width,
+          screen_height: deviceStatus.screen_height,
+          color_depth: deviceStatus.color_depth || 0,
+          pixel_ratio: deviceStatus.pixel_ratio || 1
+        } : {}),
+        
+        // Connection details - with defaults
+        connection_type: deviceStatus.connection_type || 'unknown',
+        effective_type: deviceStatus.effective_type || 'unknown',
+        downlink: deviceStatus.downlink || 0,
+        rtt: deviceStatus.rtt || 0,
+        
+        // Device status metadata
+        _device_status: {
+          timestamp: serverTimestamp(),
+          status: 'active',
+          message: 'Test device added successfully'
+        }
       };
 
-      console.log('Created device data with position and geofence:', deviceData);
-
-      // Add device to Firestore with the same field names
+      console.log('Adding device to Firestore with data:', deviceData);
+      
+      // Add device to Firestore
       const deviceRef = doc(db, 'schools', SCHOOL_ID, 'devices', deviceData.device_id);
-      console.log('Adding device to Firestore...');
       await setDoc(deviceRef, deviceData);
-      console.log('Device added to Firestore successfully');
       
-      console.log('Starting device monitoring with data:', deviceData);
+      console.log('Device added successfully');
       
-      // Start monitoring the device with consistent field names
-      const monitoringData = {
-        ...deviceData,
-        batteryLevel: deviceData.battery_level,
-        isCharging: deviceData.is_charging,
-        networkType: deviceData.network_type,
-        signalStrength: deviceData.signal_strength
-      };
-      console.log('Monitoring data:', monitoringData);
-      
-      const stopMonitoring = startDeviceMonitoring(monitoringData);
-      
-      // Store the cleanup function
-      window.deviceMonitoringCleanup = stopMonitoring;
-
       toast({
         title: "Success",
-        description: "Test device added and monitoring started",
+        description: "Test device added successfully",
         variant: "default"
       });
 
-      console.log('Test device setup completed successfully');
+      // Start monitoring the device
+      const stopMonitoring = startDeviceMonitoring(deviceData);
+      window.deviceMonitoringCleanup = stopMonitoring;
+      
     } catch (error) {
       console.error('Error in addTestDevice:', error);
       console.log('Error details:', {
@@ -338,7 +360,90 @@ function DeviceTracking() {
           latitude: deviceData.latitude,
           longitude: deviceData.longitude,
           network_type: deviceData.network_type || 'Unknown',
-          signal_strength: deviceData.signal_strength
+          signal_strength: deviceData.signal_strength,
+          
+          // Device capabilities
+          webgl_support: deviceData.webgl_support || false,
+          canvas_support: deviceData.canvas_support || false,
+          local_storage: deviceData.local_storage || false,
+          session_storage: deviceData.session_storage || false,
+          
+          // Browser details
+          user_agent: deviceData.user_agent || 'Unknown',
+          platform: deviceData.platform || 'Unknown',
+          language: deviceData.language || 'Unknown',
+          
+          // Screen information
+          screen_width: deviceData.screen_width,
+          screen_height: deviceData.screen_height,
+          color_depth: deviceData.color_depth,
+          pixel_ratio: deviceData.pixel_ratio,
+          
+          // Connection details
+          connection_type: deviceData.connection_type || 'Unknown',
+          effective_type: deviceData.effective_type || 'Unknown',
+          downlink: deviceData.downlink,
+          rtt: deviceData.rtt,
+
+          // Device details
+          model: deviceData.model || 'Unknown',
+          os_version: deviceData.os_version || 'Unknown',
+          build_number: deviceData.build_number || 'Unknown',
+          carrier: deviceData.carrier || 'Unknown',
+          cellular_technology: deviceData.cellular_technology || 'Unknown',
+          wifi_mac: deviceData.wifi_mac || 'Unknown',
+          bluetooth_mac: deviceData.bluetooth_mac || 'Unknown',
+
+          // Hardware capabilities
+          has_cellular: deviceData.has_cellular || false,
+          has_gps: deviceData.has_gps || false,
+          has_compass: deviceData.has_compass || false,
+          has_accelerometer: deviceData.has_accelerometer || false,
+          has_gyroscope: deviceData.has_gyroscope || false,
+          has_touch_id: deviceData.has_touch_id || false,
+          has_face_id: deviceData.has_face_id || false,
+          has_lidar: deviceData.has_lidar || false,
+
+          // Storage & Memory
+          total_storage: deviceData.total_storage,
+          available_storage: deviceData.available_storage,
+          total_memory: deviceData.total_memory,
+          memory_usage: deviceData.memory_usage,
+
+          // Battery details
+          battery_health: deviceData.battery_health,
+          battery_cycles: deviceData.battery_cycles,
+          battery_temperature: deviceData.battery_temperature,
+
+          // Network details
+          wifi_ssid: deviceData.wifi_ssid || 'Unknown',
+          wifi_strength: deviceData.wifi_strength,
+          cellular_strength: deviceData.cellular_strength,
+
+          // System status
+          cpu_usage: deviceData.cpu_usage,
+          gpu_usage: deviceData.gpu_usage,
+          active_apps: deviceData.active_apps || [],
+          background_apps: deviceData.background_apps || [],
+
+          // Security status
+          supervised: deviceData.supervised || false,
+          mdm_enrolled: deviceData.mdm_enrolled || false,
+          passcode_enabled: deviceData.passcode_enabled || false,
+          activation_lock_enabled: deviceData.activation_lock_enabled || false,
+          last_backup_date: deviceData.last_backup_date,
+
+          // Additional metrics
+          location_services_enabled: deviceData.location_services_enabled || false,
+          gps_status: deviceData.gps_status || 'Unknown',
+          compass_heading: deviceData.compass_heading,
+          altitude: deviceData.altitude,
+          speed: deviceData.speed,
+          brightness: deviceData.brightness,
+          true_tone_enabled: deviceData.true_tone_enabled || false,
+          night_shift_enabled: deviceData.night_shift_enabled || false,
+          uptime: deviceData.uptime,
+          last_restart: deviceData.last_restart
         });
       }
 
@@ -465,16 +570,12 @@ function DeviceTracking() {
       <Card 
         className="bg-white overflow-hidden hover:bg-gray-50 transition-colors cursor-pointer"
         onClick={() => {
-          // Use actual device coordinates without fallback to school location
-          const deviceWithLocation = {
-            ...device,
-            // Only pass through actual device coordinates
-            latitude: device.latitude,
-            longitude: device.longitude,
-            accuracy: device.accuracy
+          // Only pass through data that exists
+          const deviceWithDetails = {
+            ...device
           };
-          console.log('Selected device with location:', deviceWithLocation);
-          setSelectedDevice(deviceWithLocation);
+          console.log('Selected device with details:', deviceWithDetails);
+          setSelectedDevice(deviceWithDetails);
         }}
       >
         <div className="p-4">
@@ -483,8 +584,6 @@ function DeviceTracking() {
               <h3 className="font-medium text-gray-900">{device.device_id}</h3>
               <p className="text-sm text-gray-500">
                 {device.learner_name} - Grade {device.grade}
-                <br />
-                <span className="text-xs text-gray-400">ID: {device.device_id}</span>
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -494,41 +593,42 @@ function DeviceTracking() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div className="flex items-center gap-2">
+          {/* Only show battery info if available */}
+          {device.battery_level !== undefined && (
+            <div className="flex items-center gap-2 mt-3">
               <Battery className={`w-4 h-4 ${device.battery_level <= 20 ? 'text-red-400' : 'text-gray-400'}`} />
               <span className="text-sm text-gray-600">
-                {device.battery_level === 'Unknown' ? 'Unknown' : `${device.battery_level}%${device.is_charging ? ' (Charging)' : ''}`}
+                {device.battery_level}%{device.is_charging ? ' (Charging)' : ''}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+          )}
+          
+          {/* Only show network info if available */}
+          {device.network_type && (
+            <div className="flex items-center gap-2 mt-2">
               <Wifi className="w-4 h-4 text-gray-400" />
               <span className="text-sm text-gray-600">
-                {device.network_type && device.signal_strength ? `${device.network_type} (${device.signal_strength}%)` : device.network_type || 'Unknown'}
+                {device.network_type}{device.signal_strength ? ` (${device.signal_strength}%)` : ''}
               </span>
             </div>
-          </div>
+          )}
           
-          <div className="flex items-center gap-2 mt-2">
-            <MapPin className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-600">{device.location || 'Unknown location'}</span>
-            {device.is_outside_geofence && (
-              <span className="flex items-center gap-1 text-xs text-red-600">
-                <AlertTriangle className="w-3 h-3" />
-                Outside Geofence
-              </span>
-            )}
-          </div>
+          {/* Only show location if available */}
+          {device.location && (
+            <div className="flex items-center gap-2 mt-2">
+              <MapPin className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-600">{device.location}</span>
+              {device.is_outside_geofence && (
+                <span className="flex items-center gap-1 text-xs text-red-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  Outside Geofence
+                </span>
+              )}
+            </div>
+          )}
           
           <div className="text-xs text-gray-400 mt-2">
             Last seen: {formatLastSeen(device.last_seen)}
-          </div>
-          
-          <div className="mt-3 text-xs text-blue-600 flex items-center gap-1">
-            View details
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
           </div>
         </div>
       </Card>
@@ -541,7 +641,7 @@ function DeviceTracking() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Device Tracking</h1>
         <div className="flex items-center gap-4">
-          <div className="text-sm text-gray-600">
+        <div className="text-sm text-gray-600">
             Active Devices: <span className="font-medium">{devices.filter(d => d.status === 'active').length}/{devices.length}</span>
           </div>
           <Button
@@ -608,14 +708,14 @@ function DeviceTracking() {
               <Select value={selectedStatus} onValueChange={setSelectedStatus}>
                 <SelectTrigger className="flex items-center justify-between w-full sm:w-[200px] h-10 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-900 shadow-sm hover:bg-gray-50">
                   <SelectValue placeholder="All Devices" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Devices</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="alert">Alert</SelectItem>
-                  <SelectItem value="offline">Offline</SelectItem>
-                </SelectContent>
-              </Select>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Devices</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="alert">Alert</SelectItem>
+              <SelectItem value="offline">Offline</SelectItem>
+            </SelectContent>
+          </Select>
             </div>
           </div>
         </div>
@@ -639,7 +739,7 @@ function DeviceTracking() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDevices.map((device) => (
+        {filteredDevices.map((device) => (
             <DeviceStatusCard key={device.id} device={device} />
           ))}
         </div>
@@ -651,37 +751,28 @@ function DeviceTracking() {
           open={!!selectedDevice} 
           onOpenChange={() => setSelectedDevice(null)}
         >
-          <DialogContent 
-            className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto"
-          >
+          <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Device Details - {selectedDevice.device_id}</DialogTitle>
               <DialogDescription>
-                Detailed information about {selectedDevice.device_id} including location, battery status, network status, and other device metrics.
+                Device information from service provider
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {/* Basic Info Section */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Device ID</p>
-                  <p className="text-base text-gray-900">{selectedDevice.device_id}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">IMEI</p>
-                  <p className="text-base text-gray-900">{selectedDevice.imei}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Learner</p>
-                  <p className="text-base text-gray-900">{selectedDevice.learner_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Grade</p>
-                  <p className="text-base text-gray-900">{selectedDevice.grade}</p>
-                </div>
+                {selectedDevice.device_id && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Device ID</p>
+                    <p className="text-base text-gray-900">{selectedDevice.device_id}</p>
+                  </div>
+                )}
+                {selectedDevice.imei && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">IMEI</p>
+                    <p className="text-base text-gray-900">{selectedDevice.imei}</p>
+                  </div>
+                )}
               </div>
 
               {/* Status Section */}
@@ -695,83 +786,75 @@ function DeviceTracking() {
                 </div>
               </div>
 
-              {/* Battery Section */}
-              <div>
-                <p className="text-sm font-medium text-gray-500">Battery Status</p>
-                <div className="flex items-center gap-2">
-                  <Battery className={`w-4 h-4 ${selectedDevice.battery_level <= 20 ? 'text-red-500' : 'text-green-500'}`} />
-                  <p className="text-base text-gray-900">
-                    {selectedDevice.battery_level === 'Unknown' ? 
-                      'Unknown' : 
-                      `${selectedDevice.battery_level}%${selectedDevice.is_charging ? ' (Charging)' : ''}`
-                    }
-                  </p>
-                </div>
-              </div>
-
-              {/* Network Section */}
-              <div>
-                <p className="text-sm font-medium text-gray-500">Network Status</p>
-                <div className="flex items-center gap-2">
-                  <Wifi className="w-4 h-4 text-blue-500" />
-                  <p className="text-base text-gray-900">
-                    {selectedDevice.network_type} ({selectedDevice.signal_strength}% signal)
-                  </p>
-                </div>
-              </div>
-
-              {/* Location Section with Map */}
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-500">Location</p>
-                <p className="text-base text-gray-900 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400" />
-                  {selectedDevice.location || 'Unknown'}
-                  {selectedDevice.is_outside_geofence && (
-                    <span className="text-red-500 flex items-center gap-1">
-                      <AlertTriangle className="w-4 h-4" />
-                      Outside Geofence
-                    </span>
-                  )}
-                </p>
-                {selectedDevice.latitude && selectedDevice.longitude && selectedDevice.location !== 'School Premises' ? (
-                  <div className="relative h-[300px] w-full rounded-lg overflow-hidden border border-gray-200">
-                    <MapContainer
-                      key={`${selectedDevice.latitude}-${selectedDevice.longitude}`}
-                      center={[selectedDevice.latitude, selectedDevice.longitude]}
-                      zoom={15}
-                      style={{ height: '100%', width: '100%' }}
-                      scrollWheelZoom={false}
-                    >
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      <Marker position={[selectedDevice.latitude, selectedDevice.longitude]}>
-                        <Popup>
-                          <div className="text-sm space-y-1">
-                            <p><strong>{selectedDevice.device_id}</strong></p>
-                            <p>Last seen: {formatLastSeen(selectedDevice.last_seen)}</p>
-                            <p>Accuracy: {selectedDevice.accuracy ? `${Math.round(selectedDevice.accuracy)}m` : 'Unknown'}</p>
-                            <p>Location: {selectedDevice.location}</p>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    </MapContainer>
+              {/* Battery Section - only if data exists */}
+              {selectedDevice.battery_level !== undefined && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Battery Status</p>
+                  <div className="flex items-center gap-2">
+                    <Battery className={`w-4 h-4 ${selectedDevice.battery_level <= 20 ? 'text-red-500' : 'text-green-500'}`} />
+                    <p className="text-base text-gray-900">
+                      {selectedDevice.battery_level}%{selectedDevice.is_charging ? ' (Charging)' : ''}
+                    </p>
                   </div>
-                ) : (
-                  <div className="h-[300px] w-full rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center">
-                    <div className="text-center p-6">
-                      <MapPin className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 font-medium">Location Data Unavailable</p>
-                      <p className="text-sm text-gray-400 mt-1 max-w-[250px]">
-                        {selectedDevice.location === 'School Premises' 
-                          ? 'Device is at school premises. Live tracking will begin when device moves.' 
-                          : 'Waiting for device location data from service provider.'}
-                      </p>
+                </div>
+              )}
+
+              {/* Network Section - only if data exists */}
+              {selectedDevice.network_type && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Network Status</p>
+                  <div className="flex items-center gap-2">
+                    <Wifi className="w-4 h-4 text-blue-500" />
+                    <p className="text-base text-gray-900">
+                      {selectedDevice.network_type}
+                      {selectedDevice.signal_strength ? ` (${selectedDevice.signal_strength}% signal)` : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Location Section - only if coordinates exist */}
+              {(selectedDevice.latitude || selectedDevice.location) && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-500">Location</p>
+                  <p className="text-base text-gray-900 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-gray-400" />
+                    {selectedDevice.location}
+                    {selectedDevice.is_outside_geofence && (
+                      <span className="text-red-500 flex items-center gap-1">
+                        <AlertTriangle className="w-4 h-4" />
+                        Outside Geofence
+                      </span>
+                    )}
+                  </p>
+                  {selectedDevice.latitude && selectedDevice.longitude && selectedDevice.location !== 'School Premises' && (
+                    <div className="relative h-[300px] w-full rounded-lg overflow-hidden border border-gray-200">
+                      <MapContainer
+                        key={`${selectedDevice.latitude}-${selectedDevice.longitude}`}
+                        center={[selectedDevice.latitude, selectedDevice.longitude]}
+                        zoom={15}
+                        style={{ height: '100%', width: '100%' }}
+                        scrollWheelZoom={false}
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <Marker position={[selectedDevice.latitude, selectedDevice.longitude]}>
+                          <Popup>
+                            <div className="text-sm space-y-1">
+                              <p><strong>{selectedDevice.device_id}</strong></p>
+                              <p>Last seen: {formatLastSeen(selectedDevice.last_seen)}</p>
+                              {selectedDevice.accuracy && <p>Accuracy: {Math.round(selectedDevice.accuracy)}m</p>}
+                              <p>Location: {selectedDevice.location}</p>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      </MapContainer>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Last Seen Section */}
               <div>
@@ -780,10 +863,64 @@ function DeviceTracking() {
                   {selectedDevice.last_seen ? selectedDevice.last_seen.toLocaleString() : 'Never'}
                 </p>
               </div>
+
+              {/* Only show sections if they have data */}
+              {selectedDevice.model && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Device Information</p>
+                  <div className="mt-2 space-y-2">
+                    <p className="text-sm text-gray-900">{selectedDevice.model}</p>
+                    {selectedDevice.os_version && (
+                      <p className="text-sm text-gray-900">OS Version: {selectedDevice.os_version}</p>
+                    )}
+              </div>
             </div>
+              )}
+
+              {/* Only show storage if data exists */}
+              {(selectedDevice.available_storage !== undefined && selectedDevice.total_storage !== undefined) && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Storage</p>
+                  <p className="text-sm text-gray-900">
+                    {selectedDevice.available_storage}GB free of {selectedDevice.total_storage}GB
+                  </p>
+                </div>
+              )}
+
+              {/* Only show memory if data exists */}
+              {(selectedDevice.memory_usage !== undefined && selectedDevice.total_memory !== undefined) && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Memory Usage</p>
+                  <p className="text-sm text-gray-900">
+                    {selectedDevice.memory_usage}GB used of {selectedDevice.total_memory}GB
+                  </p>
+                </div>
+              )}
+
+              {/* Only show security status if any security data exists */}
+              {(selectedDevice.supervised || selectedDevice.mdm_enrolled) && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Security Status</p>
+                  <div className="mt-2 flex flex-wrap gap-4">
+                    {selectedDevice.supervised && (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-gray-600">Supervised</span>
+                      </div>
+                    )}
+                    {selectedDevice.mdm_enrolled && (
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-gray-600">MDM Enrolled</span>
+                      </div>
+                    )}
+            </div>
+          </div>
+              )}
+          </div>
           </DialogContent>
         </Dialog>
-      )}
+        )}
 
       {isLoading && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center">

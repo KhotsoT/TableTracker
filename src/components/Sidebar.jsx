@@ -11,6 +11,13 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 
+// TODO: Re-enable device tracking functionality when MDM integration is complete
+// Steps to re-enable:
+// 1. Uncomment the Tracking Link component below
+// 2. Update mdmService.js with actual MDM provider integration
+// 3. Test device tracking with real devices
+// 4. Remove this TODO comment
+
 function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -33,7 +40,7 @@ function Sidebar() {
       
       {/* Navigation Section */}
       <div className="p-4">
-        <nav className="space-y-1">
+        <nav className="space-y-2">
           <Link 
             to="/dashboard" 
             className={cn(
@@ -61,7 +68,7 @@ function Sidebar() {
           <Link 
             to="/messages"
             className={cn(
-              "flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors",
+              "flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors mb-2",
               location.pathname === "/messages" 
                 ? "bg-blue-50 text-blue-600" 
                 : "text-gray-700 hover:bg-gray-50"
@@ -70,6 +77,8 @@ function Sidebar() {
             <MessageSquare className="w-5 h-5" />
             <span>Messages</span>
           </Link>
+          {/* Temporarily hidden Tracking menu item */}
+          {/* Uncomment this section when ready to re-enable tracking
           <Link 
             to="/tracking"
             className={cn(
@@ -82,6 +91,7 @@ function Sidebar() {
             <MapPin className="w-5 h-5" />
             <span>Tracking</span>
           </Link>
+          */}
         </nav>
       </div>
       

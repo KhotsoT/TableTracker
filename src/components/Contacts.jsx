@@ -271,25 +271,31 @@ function Contacts() {
   ]
 
   const downloadTemplate = () => {
-    const worksheet = XLSX.utils.json_to_sheet(templateData)
+    const worksheet = XLSX.utils.json_to_sheet([{
+      learner_name: '',
+      grade: '',
+      mother_name: '',
+      mother_contact: '',
+      father_name: '',
+      father_contact: '',
+      notes: ''
+    }])
     
     // Update column widths (removed primary_contact)
     const wscols = [
       { wch: 20 }, // learner_name
       { wch: 8 },  // grade
-      { wch: 15 }, // device_id
-      { wch: 20 }, // imei_number
       { wch: 20 }, // mother_name
       { wch: 15 }, // mother_contact
       { wch: 20 }, // father_name
       { wch: 15 }, // father_contact
-      { wch: 40 }  // notes - widened for longer explanation
+      { wch: 40 }  // notes
     ]
     worksheet['!cols'] = wscols
 
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Template')
-    XLSX.writeFile(workbook, 'student_device_template.xlsx')
+    XLSX.writeFile(workbook, 'student_contacts_template.xlsx')
   }
 
   const handleFileUpload = async (event) => {
@@ -369,14 +375,11 @@ function Contacts() {
   const validateImportData = (data) => {
     const requiredFields = [
       'learner_name', 
-      'grade', 
-      'device_id', 
-      'imei_number',
+      'grade',
       'mother_name',
       'mother_contact',
       'father_name',
-      'father_contact',
-      'primary_contact'
+      'father_contact'
     ]
     
     for (let row of data) {
@@ -385,12 +388,6 @@ function Contacts() {
           setError(`Missing required field: ${field.replace(/_/g, ' ')}`)
           return false
         }
-      }
-
-      // Validate IMEI number (should be 15 digits)
-      if (!/^\d{15}$/.test(row.imei_number.toString())) {
-        setError('Invalid IMEI number format. IMEI should be 15 digits.')
-        return false
       }
 
       // Format and validate phone numbers
@@ -424,40 +421,44 @@ function Contacts() {
         setError('Invalid phone number format')
         return false
       }
-
-      // Validate primary contact
-      if (!['mother', 'father'].includes(row.primary_contact.toLowerCase())) {
-        setError('Primary contact must be either "mother" or "father"')
-        return false
-      }
     }
     return true
   }
 
   const exportData = () => {
     try {
-      // Format data to match template structure
-      const formattedData = contacts.map(contact => ({
+      // Sort contacts by grade first
+      const sortedContacts = [...contacts].sort((a, b) => {
+        // First try to sort numerically
+        const gradeA = parseInt(a.grade);
+        const gradeB = parseInt(b.grade);
+        
+        if (!isNaN(gradeA) && !isNaN(gradeB)) {
+          return gradeA - gradeB;
+        }
+        
+        // If not numbers, sort alphabetically
+        return a.grade.localeCompare(b.grade);
+      });
+
+      // Format data to match template structure (removed primary_contact from export)
+      const formattedData = sortedContacts.map(contact => ({
         learner_name: contact.learner_name,
         grade: contact.grade,
-        device_id: contact.device_id || '',
-        imei_number: contact.imei_number || '',
         mother_name: contact.mother_name === 'N/A' ? '' : contact.mother_name,
         mother_contact: contact.mother_contact === 'N/A' ? '' : contact.mother_contact.replace('+27', '0'),
         father_name: contact.father_name === 'N/A' ? '' : contact.father_name,
         father_contact: contact.father_contact === 'N/A' ? '' : contact.father_contact.replace('+27', '0'),
-        notes: '' // Optional column for users to add notes during updates
+        notes: contact.notes || ''
       }));
 
-      // Create worksheet with the same column widths as template
+      // Create worksheet with updated column widths
       const worksheet = XLSX.utils.json_to_sheet(formattedData);
       
-      // Set the same column widths as template
+      // Set column widths (removed primary_contact)
       const wscols = [
         { wch: 20 }, // learner_name
         { wch: 8 },  // grade
-        { wch: 15 }, // device_id
-        { wch: 20 }, // imei_number
         { wch: 20 }, // mother_name
         { wch: 15 }, // mother_contact
         { wch: 20 }, // father_name
@@ -466,13 +467,11 @@ function Contacts() {
       ];
       worksheet['!cols'] = wscols;
 
-      // Add header row styling to match template
+      // Add header row styling (removed primary_contact)
       XLSX.utils.sheet_add_aoa(worksheet, [
         [
           'learner_name',
           'grade',
-          'device_id',
-          'imei_number',
           'mother_name',
           'mother_contact',
           'father_name',
@@ -821,9 +820,6 @@ function Contacts() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     Grade
                   </th>
-                  <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    Device ID
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Mother
                   </th>
@@ -848,9 +844,6 @@ function Contacts() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                         {contact.grade}
-                      </td>
-                      <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        {contact.device_id}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center justify-between">

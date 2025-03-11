@@ -44,7 +44,7 @@ function Login() {
               Stay connected with your school community
             </h1>
             <p className="text-blue-100 text-lg">
-              Send bulk SMS messages to parents, track school devices, and manage all communications from one central platform.
+              Send bulk SMS messages to parents and manage all communications from one central platform.
             </p>
             <div className="mt-8 space-y-4">
               <div className="flex items-start gap-3">
@@ -55,10 +55,12 @@ function Login() {
                 <Users className="w-5 h-5 mt-1 text-blue-300" />
                 <p className="text-blue-100">Manage contact groups by grade or class</p>
               </div>
+              {/* Temporarily hidden tracking feature
               <div className="flex items-start gap-3">
                 <Tablet className="w-5 h-5 mt-1 text-blue-300" />
                 <p className="text-blue-100">Monitor school device locations and status</p>
               </div>
+              */}
             </div>
           </div>
         </div>

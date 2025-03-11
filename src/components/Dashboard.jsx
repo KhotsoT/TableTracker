@@ -27,11 +27,16 @@ function Dashboard() {
   const [schoolExists, setSchoolExists] = useState(false)
 
   const getDeviceStatus = async (deviceData) => {
-    if (!deviceData.imei) return false;
+    if (!deviceData.imei) {
+      console.log('No IMEI provided for device:', deviceData);
+      return false;
+    }
     
     try {
+      console.log('Checking status for device:', deviceData.imei);
+      
       // First check our device_status collection for the most recent status
-      const statusRef = collection(db, 'device_status');
+      const statusRef = collection(db, 'schools', SCHOOL_ID, 'device_status');
       const statusQuery = query(
         statusRef,
         where('imei', '==', deviceData.imei),
@@ -40,24 +45,30 @@ function Dashboard() {
         limit(1)
       );
       
-      const statusSnap = await getDocs(statusQuery);
-      
-      if (!statusSnap.empty) {
-        const latestStatus = statusSnap.docs[0].data();
-        return {
-          isActive: true,
-          batteryLevel: latestStatus.battery_level,
-          isCharging: latestStatus.is_charging,
-          networkType: latestStatus.network_type,
-          signalStrength: latestStatus.signal_strength,
-          location: latestStatus.location,
-          isOutsideGeofence: latestStatus.is_outside_geofence,
-          lastUpdate: latestStatus.timestamp?.toDate()
-        };
+      try {
+        const statusSnap = await getDocs(statusQuery);
+        console.log('Status snapshot exists:', !statusSnap.empty);
+        
+        if (!statusSnap.empty) {
+          const latestStatus = statusSnap.docs[0].data();
+          return {
+            isActive: true,
+            batteryLevel: latestStatus.battery_level,
+            isCharging: latestStatus.is_charging,
+            networkType: latestStatus.network_type,
+            signalStrength: latestStatus.signal_strength,
+            location: latestStatus.location,
+            isOutsideGeofence: latestStatus.is_outside_geofence,
+            lastUpdate: latestStatus.timestamp?.toDate()
+          };
+        }
+      } catch (statusError) {
+        console.warn('Error checking device_status:', statusError);
+        // Continue to check heartbeats even if status check fails
       }
 
       // If no recent status, check device heartbeat collection
-      const heartbeatRef = collection(db, 'device_heartbeats');
+      const heartbeatRef = collection(db, 'schools', SCHOOL_ID, 'device_heartbeats');
       const heartbeatQuery = query(
         heartbeatRef,
         where('imei', '==', deviceData.imei),
@@ -66,32 +77,40 @@ function Dashboard() {
         limit(1)
       );
 
-      const heartbeatSnap = await getDocs(heartbeatQuery);
-      
-      if (!heartbeatSnap.empty) {
-        const latestHeartbeat = heartbeatSnap.docs[0].data();
-        return {
-          isActive: true,
-          batteryLevel: latestHeartbeat.battery_level,
-          isCharging: latestHeartbeat.is_charging,
-          networkType: latestHeartbeat.network_type,
-          signalStrength: latestHeartbeat.signal_strength,
-          location: latestHeartbeat.location,
-          isOutsideGeofence: latestHeartbeat.is_outside_geofence,
-          lastUpdate: latestHeartbeat.timestamp?.toDate()
-        };
+      try {
+        const heartbeatSnap = await getDocs(heartbeatQuery);
+        console.log('Heartbeat snapshot exists:', !heartbeatSnap.empty);
+        
+        if (!heartbeatSnap.empty) {
+          const latestHeartbeat = heartbeatSnap.docs[0].data();
+          return {
+            isActive: true,
+            batteryLevel: latestHeartbeat.battery_level,
+            isCharging: latestHeartbeat.is_charging,
+            networkType: latestHeartbeat.network_type,
+            signalStrength: latestHeartbeat.signal_strength,
+            location: latestHeartbeat.location,
+            isOutsideGeofence: latestHeartbeat.is_outside_geofence,
+            lastUpdate: latestHeartbeat.timestamp?.toDate()
+          };
+        }
+      } catch (heartbeatError) {
+        console.warn('Error checking device_heartbeats:', heartbeatError);
       }
 
       // If no recent data found in either collection, device is considered offline
+      console.log('No recent status found for device:', deviceData.imei);
       return {
         isActive: false,
         lastUpdate: deviceData.last_seen?.toDate() || null
       };
     } catch (error) {
       console.error('Error checking device status:', error);
+      // Return a basic offline status instead of throwing
       return {
         isActive: false,
-        error: error.message
+        error: error.message,
+        lastUpdate: deviceData.last_seen?.toDate() || null
       };
     }
   };
@@ -161,14 +180,50 @@ function Dashboard() {
         });
 
         // Real-time alerts listener
-        const alertsQuery = query(alertsRef, orderBy('createdAt', 'desc'), limit(10));
+        const alertsQuery = query(
+          alertsRef, 
+          where('type', '==', 'sms'),
+          orderBy('createdAt', 'desc'), 
+          limit(10)  // Fetch more than 5 to ensure we have enough unique messages
+        );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
-          const activity = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            time: formatTime(doc.data().createdAt?.toDate())
-          }));
-          setRecentActivity(activity);
+          try {
+            console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
+            
+            // Create a Map to store unique messages by their content
+            const uniqueMessages = new Map();
+            
+            snapshot.docs.forEach(doc => {
+              const data = doc.data();
+              // Use message content as the key to group identical messages
+              const messageKey = data.message || '';
+              
+              if (!uniqueMessages.has(messageKey)) {
+                uniqueMessages.set(messageKey, {
+                  id: doc.id,
+                  type: 'sms',
+                  message: data.message || '',
+                  recipients: data.recipients_count || 1,
+                  time: formatTime(data.createdAt?.toDate()),
+                  createdAt: data.createdAt?.toDate() || new Date()
+                });
+              }
+            });
+            
+            // Convert Map to array and take the last 5 unique messages
+            const activity = Array.from(uniqueMessages.values())
+              .sort((a, b) => b.createdAt - a.createdAt)
+              .slice(0, 5);
+            
+            console.log('Processed unique SMS activity:', activity);
+            setRecentActivity(activity);
+          } catch (error) {
+            console.error('Error processing activity:', error);
+            setError('Error loading recent activity: ' + error.message);
+          }
+        }, (error) => {
+          console.error('Activity listener error:', error);
+          setError('Error in activity listener: ' + error.message);
         });
 
         // Fetch SMS balance
@@ -326,43 +381,43 @@ function Dashboard() {
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* SMS Credits Card */}
             <Card className="bg-white overflow-hidden">
               <div className="p-4 sm:p-8">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-green-50">
-                    <Wallet className="w-6 h-6 text-green-600" />
+                  <div className="p-3 rounded-xl bg-blue-50">
+                    <Wallet className="w-6 h-6 text-blue-600" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">SMS Credits</p>
                     <p className="text-2xl font-semibold text-gray-900">
                       {isLoading ? (
-                        <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                        <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
                       ) : (
-                        stats.smsCredit || '0'
+                        stats.smsCredit
                       )}
                     </p>
                   </div>
                 </div>
               </div>
-              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
-                <span className="text-sm text-green-600">Available for messages</span>
+              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
+                <span className="text-sm text-blue-600">Available for messages</span>
               </div>
             </Card>
 
-            {/* Students Card */}
+            {/* Total Students Card */}
             <Card className="bg-white overflow-hidden">
               <div className="p-4 sm:p-8">
                 <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-blue-50/50">
-                    <Users className="w-6 h-6 text-blue-600" />
+                  <div className="p-3 rounded-xl bg-indigo-50">
+                    <Users className="w-6 h-6 text-indigo-600" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500">Total Students</p>
                     <p className="text-2xl font-semibold text-gray-900">
                       {isLoading ? (
-                        <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                        <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
                       ) : (
                         stats.totalStudents
                       )}
@@ -370,32 +425,8 @@ function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
-                <span className="text-sm text-blue-600">Active enrollments</span>
-              </div>
-            </Card>
-
-            {/* Devices Card */}
-            <Card className="bg-white overflow-hidden">
-              <div className="p-4 sm:p-8">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-xl bg-green-50">
-                    <Tablet className="w-6 h-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Active Devices</p>
-                    <p className="text-2xl font-semibold text-gray-900">
-                      {isLoading ? (
-                        <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
-                      ) : (
-                        `${stats.activeTablets}/${stats.totalTablets}`
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
-                <span className="text-sm text-green-600">Devices tracked</span>
+              <div className="px-4 sm:px-8 py-3 sm:py-4 bg-indigo-50 border-t border-indigo-100">
+                <span className="text-sm text-indigo-600">Active enrollments</span>
               </div>
             </Card>
           </div>
@@ -411,23 +442,13 @@ function Dashboard() {
             <div className="divide-y divide-gray-100">
               {recentActivity.map((activity) => (
                 <div key={activity.id} className="flex items-start gap-3 sm:gap-4 px-4 sm:px-8 py-4 sm:py-6 hover:bg-gray-50 transition-colors">
-                  {activity.type === 'alert' && 
-                    <AlertTriangle className="w-4 h-4 text-red-500 mt-1 shrink-0" />
-                  }
-                  {activity.type === 'location' && 
-                    <MapPin className="w-4 h-4 text-blue-500 mt-1 shrink-0" />
-                  }
-                  {activity.type === 'status' && 
-                    <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
-                  }
-                  
+                  <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
                       <div>
-                        <p className="font-medium text-gray-900 mb-2">{activity.device}</p>
                         <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 sm:line-clamp-none">{activity.message}</p>
                         <p className="text-sm text-gray-500 mt-2">
-                          {activity.student} - {activity.grade}
+                          Sent to {activity.recipients} recipient{activity.recipients !== 1 ? 's' : ''}
                         </p>
                       </div>
                       <span className="text-xs text-gray-500 whitespace-nowrap mt-2 sm:mt-0 sm:ml-4">{activity.time}</span>
@@ -438,7 +459,7 @@ function Dashboard() {
               {recentActivity.length === 0 && (
                 <div className="px-4 sm:px-8 py-12 sm:py-16 text-center">
                   <History className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500 text-sm">No recent activity to show</p>
+                  <p className="text-gray-500 text-sm">No recent SMS activity</p>
                 </div>
               )}
             </div>
@@ -468,43 +489,43 @@ function Dashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* SMS Credits Card */}
           <Card className="bg-white overflow-hidden">
             <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-green-50">
-                  <Wallet className="w-6 h-6 text-green-600" />
+                <div className="p-3 rounded-xl bg-blue-50">
+                  <Wallet className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">SMS Credits</p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {isLoading ? (
-                      <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                      <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
                     ) : (
-                      stats.smsCredit || '0'
+                      stats.smsCredit
                     )}
                   </p>
                 </div>
               </div>
             </div>
-            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
-              <span className="text-sm text-green-600">Available for messages</span>
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
+              <span className="text-sm text-blue-600">Available for messages</span>
             </div>
           </Card>
 
-          {/* Students Card */}
+          {/* Total Students Card */}
           <Card className="bg-white overflow-hidden">
             <div className="p-4 sm:p-8">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-blue-50/50">
-                  <Users className="w-6 h-6 text-blue-600" />
+                <div className="p-3 rounded-xl bg-indigo-50">
+                  <Users className="w-6 h-6 text-indigo-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Total Students</p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {isLoading ? (
-                      <span className="inline-block w-12 h-8 bg-gray-200 animate-pulse rounded" />
+                      <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
                     ) : (
                       stats.totalStudents
                     )}
@@ -512,32 +533,8 @@ function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-blue-50 border-t border-blue-100">
-              <span className="text-sm text-blue-600">Active enrollments</span>
-            </div>
-          </Card>
-
-          {/* Devices Card */}
-          <Card className="bg-white overflow-hidden">
-            <div className="p-4 sm:p-8">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-green-50">
-                  <Tablet className="w-6 h-6 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Active Devices</p>
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {isLoading ? (
-                      <span className="inline-block w-20 h-8 bg-gray-200 animate-pulse rounded" />
-                    ) : (
-                      `${stats.activeTablets}/${stats.totalTablets}`
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-green-50 border-t border-green-100">
-              <span className="text-sm text-green-600">Devices tracked</span>
+            <div className="px-4 sm:px-8 py-3 sm:py-4 bg-indigo-50 border-t border-indigo-100">
+              <span className="text-sm text-indigo-600">Active enrollments</span>
             </div>
           </Card>
         </div>
@@ -553,23 +550,13 @@ function Dashboard() {
           <div className="divide-y divide-gray-100">
             {recentActivity.map((activity) => (
               <div key={activity.id} className="flex items-start gap-3 sm:gap-4 px-4 sm:px-8 py-4 sm:py-6 hover:bg-gray-50 transition-colors">
-                {activity.type === 'alert' && 
-                  <AlertTriangle className="w-4 h-4 text-red-500 mt-1 shrink-0" />
-                }
-                {activity.type === 'location' && 
-                  <MapPin className="w-4 h-4 text-blue-500 mt-1 shrink-0" />
-                }
-                {activity.type === 'status' && 
-                  <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
-                }
-                
+                <CheckCircle className="w-4 h-4 text-green-500 mt-1 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
                     <div>
-                      <p className="font-medium text-gray-900 mb-2">{activity.device}</p>
                       <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 sm:line-clamp-none">{activity.message}</p>
                       <p className="text-sm text-gray-500 mt-2">
-                        {activity.student} - {activity.grade}
+                        Sent to {activity.recipients} recipient{activity.recipients !== 1 ? 's' : ''}
                       </p>
                     </div>
                     <span className="text-xs text-gray-500 whitespace-nowrap mt-2 sm:mt-0 sm:ml-4">{activity.time}</span>
@@ -580,7 +567,7 @@ function Dashboard() {
             {recentActivity.length === 0 && (
               <div className="px-4 sm:px-8 py-12 sm:py-16 text-center">
                 <History className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">No recent activity to show</p>
+                <p className="text-gray-500 text-sm">No recent SMS activity</p>
               </div>
             )}
           </div>

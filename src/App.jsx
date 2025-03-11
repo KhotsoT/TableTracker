@@ -13,6 +13,12 @@ import Login from './components/Login'
 import './App.css'
 import { Toaster } from "sonner"
 
+// TODO: Re-enable device tracking route when MDM integration is complete
+// Steps to re-enable:
+// 1. Uncomment the tracking route below
+// 2. Test the tracking functionality
+// 3. Remove this TODO comment
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -61,7 +67,8 @@ function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/contacts" element={<Contacts />} />
                   <Route path="/messages" element={<Messages />} />
-                  <Route path="/tracking" element={<DeviceTracking />} />
+                  {/* Temporarily disabled tracking route */}
+                  {/* <Route path="/tracking" element={<DeviceTracking />} /> */}
                 </>
               ) : (
                 <Route path="*" element={<Navigate to="/login" replace />} />

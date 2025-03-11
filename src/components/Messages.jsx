@@ -214,6 +214,16 @@ function Messages() {
       const result = await sendZoomConnectSMS(previewRecipients, message);
       console.log('SMS sent successfully:', result);
       
+      // Create alert document for the sent SMS
+      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+      await addDoc(alertsRef, {
+        type: 'sms',
+        message: message,
+        recipients_count: previewRecipients.length,
+        createdAt: new Date(),
+        status: 'sent'
+      });
+      
       // Refresh credits after sending messages
       await fetchCredits();
       
