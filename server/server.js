@@ -5,13 +5,24 @@ const admin = require('firebase-admin');
 require('dotenv').config();
 
 // Initialize Firebase Admin SDK
-const serviceAccount = require('./serviceAccountKey.json'); // You'll need to add this file
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? 
+  JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : 
+  require('./serviceAccountKey.json'); // Fallback for local development
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://schoolconnect-curtis.web.app'
+  ],
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
 app.use(express.json());
 
 // Validate environment variables

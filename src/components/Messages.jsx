@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, SCHOOL_ID } from '../config/firebase';
+import API_BASE_URL from '../config/api';
 import { collection, getDocs, addDoc, query, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import { FaPaperPlane, FaUserFriends, FaSpinner, FaHistory, FaCheck, FaClock, FaExclamationCircle, FaUsers, FaGraduationCap, FaInbox, FaEnvelope, FaHome, FaQuestionCircle, FaPlus } from 'react-icons/fa';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
@@ -108,7 +109,7 @@ function Messages() {
     setIsLoadingSent(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:3000/api/sent-messages');
+      const response = await fetch(`${API_BASE_URL}/sent-messages`);
       if (!response.ok) {
         throw new Error(`Failed to fetch sent messages: ${response.status}`);
       }
@@ -299,7 +300,7 @@ function Messages() {
 
       console.log('Sending messages to:', messages.length, 'recipients');
       
-      const response = await fetch('http://localhost:3000/api/send-sms', {
+      const response = await fetch(`${API_BASE_URL}/send-sms`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -325,7 +326,7 @@ function Messages() {
     setIsLoadingInbox(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:3000/api/inbox-messages');
+      const response = await fetch(`${API_BASE_URL}/inbox-messages`);
       if (!response.ok) {
         throw new Error(`Failed to fetch inbox messages: ${response.status}`);
       }
@@ -366,7 +367,7 @@ function Messages() {
   const fetchCredits = async () => {
     try {
       setError(null);
-      const response = await fetch('http://localhost:3000/api/balance');
+      const response = await fetch(`${API_BASE_URL}/balance`);
       if (!response.ok) {
         throw new Error(`Failed to fetch balance: ${response.status}`);
       }
@@ -400,7 +401,7 @@ function Messages() {
       const failedRecipients = message.recipients.filter(r => r.status === 'failed');
       if (failedRecipients.length === 0) return;
 
-      const response = await fetch('http://localhost:3000/api/resend-message', {
+      const response = await fetch(`${API_BASE_URL}/resend-message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -435,7 +436,7 @@ function Messages() {
 
   const handleSendReply = async (recipients) => {
     try {
-      const response = await fetch('http://localhost:3000/api/send-message', {
+      const response = await fetch(`${API_BASE_URL}/send-message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
