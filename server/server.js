@@ -178,8 +178,11 @@ app.get('/api/get-messages', async (req, res) => {
 
 // Update the balance endpoint to properly parse and return the credit balance
 app.get('/api/balance', async (req, res) => {
-  console.log('Received balance request');
+  console.log('Received balance request from:', req.headers.origin);
+  console.log('Request headers:', req.headers);
+  
   try {
+    console.log('Making request to ZoomConnect API...');
     const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/account/balance', {
       method: 'GET',
       headers: {
@@ -199,9 +202,11 @@ app.get('/api/balance', async (req, res) => {
     }
 
     const data = JSON.parse(responseText);
+    console.log('Parsed response data:', data);
+    
     res.json({
       success: true,
-      balance: data.credits
+      balance: data.creditBalance
     });
   } catch (error) {
     console.error('Error fetching balance:', error);
