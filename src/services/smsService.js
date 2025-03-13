@@ -1,13 +1,19 @@
 import { fetchFromAPI } from './api';
+import API_BASE_URL from '../config/api';
 
 export const getSMSBalance = async () => {
   try {
-    const response = await fetch('http://localhost:3000/api/balance');
+    console.log('Fetching SMS balance from:', `${API_BASE_URL}/balance`);
+    const response = await fetch(`${API_BASE_URL}/balance`);
+    
+    console.log('Balance response status:', response.status);
+    const data = await response.json();
+    console.log('Balance response data:', data);
+    
     if (!response.ok) {
-      throw new Error(`Failed to fetch balance: ${response.status}`);
+      throw new Error(`Failed to fetch balance: ${response.status} - ${JSON.stringify(data)}`);
     }
     
-    const data = await response.json();
     if (!data.success) {
       throw new Error(data.error || 'Failed to fetch balance');
     }
