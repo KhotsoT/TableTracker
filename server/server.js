@@ -5,20 +5,34 @@ const admin = require('firebase-admin');
 require('dotenv').config();
 
 // Initialize Firebase Admin SDK
-const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT ? 
-  JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : 
-  require('./serviceAccountKey.json'); // Fallback for local development
+let serviceAccount;
+try {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    console.log('Using Firebase service account from environment variable');
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else if (process.env.NODE_ENV === 'production') {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is required in production');
+  } else {
+    console.log('Using local serviceAccountKey.json');
+    serviceAccount = require('./serviceAccountKey.json');
+  }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('Firebase Admin initialized successfully');
+} catch (error) {
+  console.error('Error initializing Firebase Admin:', error);
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors({
   origin: [
     'http://localhost:5173',
     'http://localhost:3000',
-    'https://schoolconnect-curtis.web.app'
+    'https://schoolconnect-curtis.web.app',
+    'https://schoolconnect-server.onrender.com'
   ],
   methods: ['GET', 'POST'],
   credentials: true
@@ -478,7 +492,7 @@ app.get('/api/inbox-messages', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log('Using API key:', process.env.ZOOM_CONNECT_KEY?.substring(0, 8) + '...');
