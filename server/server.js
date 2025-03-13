@@ -178,6 +178,7 @@ app.get('/api/get-messages', async (req, res) => {
 
 // Update the balance endpoint to properly parse and return the credit balance
 app.get('/api/balance', async (req, res) => {
+  console.log('Received balance request');
   try {
     const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/account/balance', {
       method: 'GET',
@@ -189,27 +190,24 @@ app.get('/api/balance', async (req, res) => {
       }
     });
 
+    console.log('ZoomConnect API response status:', response.status);
     const responseText = await response.text();
-    console.log('Balance API Response:', {
-      status: response.status,
-      body: responseText
-    });
+    console.log('ZoomConnect API response:', responseText);
 
     if (!response.ok) {
       throw new Error(`API responded with status ${response.status}: ${responseText}`);
     }
 
     const data = JSON.parse(responseText);
-    
     res.json({
       success: true,
-      balance: data.creditBalance
+      balance: data.credits
     });
   } catch (error) {
     console.error('Error fetching balance:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Failed to fetch SMS balance'
     });
   }
 });
