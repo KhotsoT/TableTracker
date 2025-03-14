@@ -457,28 +457,81 @@ function Messages() {
 
   const handleResendFailed = async (message) => {
     try {
+      // Get failed recipients
       const failedRecipients = message.recipients.filter(r => r.status === 'failed');
-      if (failedRecipients.length === 0) return;
+      
+      if (failedRecipients.length === 0) {
+        console.log('No failed recipients to resend to');
+        toast({
+          title: "No Failed Messages",
+          description: "There are no failed messages to resend",
+          variant: "info"
+        });
+        return;
+      }
+      
+      console.log(`Resending to ${failedRecipients.length} failed recipients`);
+      
+      // If we have a large number of recipients, send in batches
+      const BATCH_SIZE = 50;
+      let allResults = [];
+      
+      // Process in batches if more than BATCH_SIZE recipients
+      if (failedRecipients.length > BATCH_SIZE) {
+        console.log(`Resending in batches of ${BATCH_SIZE}`);
+        
+        for (let i = 0; i < failedRecipients.length; i += BATCH_SIZE) {
+          const batch = failedRecipients.slice(i, i + BATCH_SIZE);
+          console.log(`Resending batch ${i/BATCH_SIZE + 1} of ${Math.ceil(failedRecipients.length/BATCH_SIZE)}, size: ${batch.length}`);
+          
+          const response = await fetch(`${API_BASE_URL}/resend-message`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: message.message,
+              recipients: batch.map(r => r.number)
+            })
+          });
+          
+          const data = await response.json();
+          console.log(`Batch ${i/BATCH_SIZE + 1} response:`, data);
+          
+          if (!data.success) {
+            throw new Error(data.error || `Failed to resend batch ${i/BATCH_SIZE + 1}`);
+          }
+          
+          allResults.push(data);
+        }
+        
+        toast({
+          title: "Messages Queued",
+          description: `Resending to ${failedRecipients.length} failed recipient(s) in ${allResults.length} batches`,
+          variant: "success"
+        });
+      } else {
+        // Send all in one request if fewer than BATCH_SIZE
+        const response = await fetch(`${API_BASE_URL}/resend-message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message.message,
+            recipients: failedRecipients.map(r => r.number)
+          })
+        });
 
-      const response = await fetch(`${API_BASE_URL}/resend-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: message.message,
-          recipients: failedRecipients.map(r => r.number)
-        })
-      });
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
 
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
-
-      toast({
-        title: "Messages Queued",
-        description: `Resending to ${failedRecipients.length} failed recipient(s)`,
-        variant: "success"
-      });
+        toast({
+          title: "Messages Queued",
+          description: `Resending to ${failedRecipients.length} failed recipient(s)`,
+          variant: "success"
+        });
+      }
 
       // Refresh messages list
       fetchSentMessages();
@@ -792,13 +845,13 @@ function Messages() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-900">
-                          To: {msg.recipients.length} recipient{msg.recipients.length !== 1 ? 's' : ''}
+                          To: {msg.totalRecipients || msg.recipients.length} recipient{(msg.totalRecipients || msg.recipients.length) !== 1 ? 's' : ''}
                         </span>
                         <span className="text-xs text-gray-500">
-                          ({msg.status.delivered} delivered, {msg.status.failed} failed)
+                          ({msg.status.delivered || 0} delivered, {msg.status.failed || 0} failed)
                         </span>
                       </div>
-                      {msg.status.failed > 0 && (
+                      {(msg.status.failed > 0) && (
                         <Button 
                           variant="outline"
                           size="sm"
@@ -812,7 +865,10 @@ function Messages() {
                         </Button>
                       )}
                     </div>
-                    <p className="text-sm text-gray-600">{msg.message}</p>
+                    <p className="text-sm text-gray-600 line-clamp-2">{msg.message}</p>
+                    <div className="mt-2 text-xs text-gray-500">
+                      {new Date(msg.sentAt).toLocaleString()}
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -880,23 +936,49 @@ function Messages() {
                 <>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-500">
-                      Recipients ({selectedMessage.recipients?.length})
+                      Recipients Summary
                     </label>
-                    <div className="bg-gray-50 rounded-lg divide-y divide-gray-100">
-                      {selectedMessage.recipients?.map((recipient, index) => (
-                        <div key={index} className="px-4 py-3 flex items-center justify-between">
-                          <span className="text-sm text-gray-900">{recipient.number}</span>
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            recipient.status === 'delivered' ? 'bg-green-100 text-green-800' :
-                            recipient.status === 'failed' ? 'bg-red-100 text-red-800' :
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {recipient.status}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="px-4 py-3 bg-gray-50 rounded-lg space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">Total Recipients:</span>
+                        <span className="font-medium">{selectedMessage.totalRecipients || selectedMessage.recipients?.length || 0}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">Delivered:</span>
+                        <span className="font-medium text-green-600">{selectedMessage.status?.delivered || 0}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">Failed:</span>
+                        <span className="font-medium text-red-600">{selectedMessage.status?.failed || 0}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-700">Pending:</span>
+                        <span className="font-medium text-yellow-600">{selectedMessage.status?.pending || 0}</span>
+                      </div>
                     </div>
                   </div>
+
+                  {selectedMessage.recipients?.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-500">
+                        Recipients Detail {selectedMessage.recipients.length > 20 && `(Showing first 20 of ${selectedMessage.recipients.length})`}
+                      </label>
+                      <div className="bg-gray-50 rounded-lg divide-y divide-gray-100 max-h-60 overflow-y-auto">
+                        {selectedMessage.recipients.slice(0, 20).map((recipient, index) => (
+                          <div key={index} className="px-4 py-3 flex items-center justify-between">
+                            <span className="text-sm text-gray-900">{recipient.number}</span>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              recipient.status === 'delivered' ? 'bg-green-100 text-green-800' :
+                              recipient.status === 'failed' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {recipient.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-500">Sent At</label>
@@ -947,7 +1029,7 @@ function Messages() {
                   >
                     Close
                   </Button>
-                  {selectedMessage.status?.failed > 0 && (
+                  {(selectedMessage.status?.failed > 0) && (
                     <Button
                       onClick={() => {
                         handleResendFailed(selectedMessage);

@@ -318,10 +318,15 @@ app.get('/api/sent-messages', async (req, res) => {
 
     console.log(`Total messages fetched: ${allMessages.length}`);
 
-    // Group messages by content and time (within same minute)
+    // Group messages by content and time (within same hour instead of minute)
     const groupedMessages = allMessages.reduce((groups, msg) => {
-      const messageTime = new Date(msg.dateTimeSent).getTime();
-      const key = `${msg.message}_${Math.floor(messageTime / 60000)}`;
+      // Skip messages without content
+      if (!msg.message) return groups;
+      
+      // Use only the message content as the key - ignore time completely
+      const key = `${msg.message}`;
+      
+      console.log(`Processing message: ${msg.messageId}, content: ${msg.message.substring(0, 20)}..., time: ${msg.dateTimeSent}`);
 
       if (!groups[key]) {
         groups[key] = {
@@ -337,6 +342,9 @@ app.get('/api/sent-messages', async (req, res) => {
             pending: 0
           }
         };
+        console.log(`Created new group with key: ${key}`);
+      } else {
+        console.log(`Adding to existing group with key: ${key}, current recipients: ${groups[key].totalRecipients}`);
       }
 
       groups[key].recipients.push({
@@ -347,7 +355,10 @@ app.get('/api/sent-messages', async (req, res) => {
 
       groups[key].totalRecipients++;
       groups[key].totalCredits += (msg.creditCost || 1);
-      groups[key].status[msg.messageStatus?.toLowerCase() || 'pending']++;
+      
+      // Ensure we have a valid status
+      const status = msg.messageStatus?.toLowerCase() || 'pending';
+      groups[key].status[status] = (groups[key].status[status] || 0) + 1;
 
       return groups;
     }, {});
@@ -356,6 +367,9 @@ app.get('/api/sent-messages', async (req, res) => {
       .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
 
     console.log(`Grouped into ${messages.length} unique messages`);
+    messages.forEach((msg, index) => {
+      console.log(`Message ${index + 1}: ${msg.message.substring(0, 20)}..., recipients: ${msg.totalRecipients}, delivered: ${msg.status.delivered}, failed: ${msg.status.failed}`);
+    });
 
     res.json({
       success: true,
