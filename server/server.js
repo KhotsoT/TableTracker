@@ -52,58 +52,110 @@ app.post('/api/send-sms', async (req, res) => {
     const { messages } = req.body;
     console.log('Processing SMS requests for', messages.length, 'recipients');
 
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid messages provided'
+      });
+    }
+
+    // Validate all messages before sending
+    const validMessages = messages.filter(msg => {
+      if (!msg.recipientNumber || !msg.message) {
+        console.warn('Invalid message format:', msg);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`Validated ${validMessages.length} of ${messages.length} messages`);
+
+    if (validMessages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid messages after validation'
+      });
+    }
+
     const results = [];
+    const errors = [];
     
     // Send messages one at a time as per API example
-    for (const msg of messages) {
-      const requestBody = {
-        recipientNumber: msg.recipientNumber,
-        message: msg.message
-      };
-
-      console.log('Sending SMS to:', requestBody.recipientNumber);
-
-      const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'email': process.env.ZOOM_CONNECT_EMAIL,
-          'token': process.env.ZOOM_CONNECT_KEY
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      const responseText = await response.text();
-      console.log('API Response:', {
-        status: response.status,
-        body: responseText
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to send SMS: ${response.status} - ${responseText}`);
-      }
-
+    for (const msg of validMessages) {
       try {
-        const result = JSON.parse(responseText);
-        results.push(result);
-      } catch (e) {
-        console.log('Non-JSON response:', responseText);
-        results.push({ status: 'sent', raw: responseText });
+        const requestBody = {
+          recipientNumber: msg.recipientNumber,
+          message: msg.message
+        };
+
+        console.log('Sending SMS to:', requestBody.recipientNumber);
+
+        const response = await fetch('https://www.zoomconnect.com/app/api/rest/v1/sms/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'email': process.env.ZOOM_CONNECT_EMAIL,
+            'token': process.env.ZOOM_CONNECT_KEY
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        const responseText = await response.text();
+        console.log('API Response:', {
+          status: response.status,
+          body: responseText.substring(0, 100) // Log only first 100 chars to avoid huge logs
+        });
+
+        if (!response.ok) {
+          const errorMsg = `Failed to send SMS to ${msg.recipientNumber}: ${response.status} - ${responseText}`;
+          console.error(errorMsg);
+          errors.push({
+            number: msg.recipientNumber,
+            error: errorMsg
+          });
+          continue; // Skip to next message
+        }
+
+        try {
+          const result = JSON.parse(responseText);
+          results.push(result);
+        } catch (e) {
+          console.log('Non-JSON response:', responseText);
+          results.push({ status: 'sent', raw: responseText });
+        }
+      } catch (error) {
+        console.error(`Error sending to ${msg.recipientNumber}:`, error);
+        errors.push({
+          number: msg.recipientNumber,
+          error: error.message
+        });
       }
     }
 
-    res.json({
-      success: true,
-      data: {
-        results,
-        totalSent: messages.length
-      }
-    });
+    // Return success if at least some messages were sent
+    if (results.length > 0) {
+      res.json({
+        success: true,
+        data: {
+          results,
+          totalSent: results.length,
+          totalFailed: errors.length,
+          errors: errors.length > 0 ? errors : undefined
+        }
+      });
+    } else {
+      // All messages failed
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send all messages',
+        errors
+      });
+    }
 
   } catch (error) {
-    console.error('Error sending SMS:', error);
-    res.status(400).json({
+    console.error('Error in SMS endpoint:', error);
+    res.status(500).json({
       success: false,
       error: error.message
     });

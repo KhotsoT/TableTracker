@@ -132,10 +132,26 @@ function Messages() {
   useEffect(() => {
     if (contacts.length === 0) return;
 
+    console.log('Filtering contacts for grade:', selectedGrade);
+    console.log('Contact grades sample:', contacts.slice(0, 3).map(c => ({ 
+      grade: c.grade, 
+      gradeType: typeof c.grade 
+    })));
+
     const filtered = contacts.filter(contact => {
       if (!contact.grade) return false;
-      return selectedGrade === 'all' || contact.grade.toString() === selectedGrade.toString();
+      
+      // For "all" grade, include all contacts with a valid grade
+      if (selectedGrade === 'all') return true;
+      
+      // Convert both to strings for comparison and trim any whitespace
+      const contactGrade = String(contact.grade).trim();
+      const selectedGradeStr = String(selectedGrade).trim();
+      
+      return contactGrade === selectedGradeStr;
     });
+
+    console.log('Filtered contacts count:', filtered.length);
 
     const recipients = filtered.flatMap(contact => {
       const recipients = [];
@@ -167,6 +183,7 @@ function Messages() {
       return recipients;
     });
 
+    console.log('Total recipients after filtering:', recipients.length);
     setPreviewRecipients(recipients);
   }, [contacts, selectedGrade, selectedContact]);
 
@@ -262,6 +279,9 @@ function Messages() {
 
   const sendZoomConnectSMS = async (recipients, messageText) => {
     try {
+      // Log the number of recipients for debugging
+      console.log(`Preparing to send SMS to ${recipients.length} recipients`);
+      
       // Format all recipients for sending
       const messages = recipients.map(recipient => {
         // Clean and format the phone number
@@ -289,33 +309,72 @@ function Messages() {
         
         // Validate the final number format
         if (!/^27\d{9}$/.test(number)) {
-          throw new Error(`Invalid phone number format for ${recipient.name}: ${number}`);
+          console.warn(`Invalid phone number format for ${recipient.name}: ${number}`);
+          return null;
         }
 
         return {
           recipientNumber: number,
-          message: messageText  // Changed to 'message' instead of 'content'
+          message: messageText
         };
-      });
+      }).filter(Boolean); // Remove any null entries from invalid numbers
 
       console.log('Sending messages to:', messages.length, 'recipients');
       
-      const response = await fetch(`${API_BASE_URL}/send-sms`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ messages })
-      });
-
-      const data = await response.json();
-      console.log('Server response:', data);
+      // If we have a large number of recipients, send in batches
+      const BATCH_SIZE = 50; // Adjust based on server capacity
+      let allResults = [];
       
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to send SMS');
-      }
+      // Process in batches if more than BATCH_SIZE recipients
+      if (messages.length > BATCH_SIZE) {
+        console.log(`Sending in batches of ${BATCH_SIZE}`);
+        
+        for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+          const batch = messages.slice(i, i + BATCH_SIZE);
+          console.log(`Sending batch ${i/BATCH_SIZE + 1} of ${Math.ceil(messages.length/BATCH_SIZE)}, size: ${batch.length}`);
+          
+          const response = await fetch(`${API_BASE_URL}/send-sms`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ messages: batch })
+          });
+          
+          const data = await response.json();
+          console.log(`Batch ${i/BATCH_SIZE + 1} response:`, data);
+          
+          if (!data.success) {
+            throw new Error(data.error || `Failed to send batch ${i/BATCH_SIZE + 1}`);
+          }
+          
+          allResults.push(data);
+        }
+        
+        return {
+          success: true,
+          batches: allResults.length,
+          totalSent: messages.length
+        };
+      } else {
+        // Send all messages in one request if fewer than BATCH_SIZE
+        const response = await fetch(`${API_BASE_URL}/send-sms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ messages })
+        });
 
-      return data;
+        const data = await response.json();
+        console.log('Server response:', data);
+        
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to send SMS');
+        }
+
+        return data;
+      }
     } catch (error) {
       console.error('Error sending messages:', error);
       throw error;
