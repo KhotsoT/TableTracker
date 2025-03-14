@@ -50,6 +50,11 @@ function Messages() {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [replyMessage, setReplyMessage] = useState('');
+  const [sentMessagesPage, setSentMessagesPage] = useState(1);
+  const [hasMoreSentMessages, setHasMoreSentMessages] = useState(true);
+  const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const MESSAGES_PER_PAGE = 10;
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
@@ -105,11 +110,24 @@ function Messages() {
     }
   };
 
-  const fetchSentMessages = async () => {
+  const fetchSentMessages = async (page = 1, dateRange = null) => {
     setIsLoadingSent(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/sent-messages`);
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('limit', MESSAGES_PER_PAGE);
+      
+      if (dateRange && dateRange.startDate) {
+        params.append('startDate', dateRange.startDate);
+      }
+      
+      if (dateRange && dateRange.endDate) {
+        params.append('endDate', dateRange.endDate);
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/sent-messages?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch sent messages: ${response.status}`);
       }
@@ -119,7 +137,17 @@ function Messages() {
         throw new Error(data.error || 'Failed to fetch sent messages');
       }
 
-      setSentMessages(data.messages);
+      // If it's the first page or we're filtering, replace the messages
+      // Otherwise append to existing messages
+      if (page === 1 || dateRange) {
+        setSentMessages(data.messages);
+      } else {
+        setSentMessages(prev => [...prev, ...data.messages]);
+      }
+      
+      // Check if there are more messages to load
+      setHasMoreSentMessages(data.messages.length === MESSAGES_PER_PAGE);
+      setSentMessagesPage(page);
     } catch (error) {
       console.error('Error fetching sent messages:', error);
       setError(`Failed to fetch sent messages: ${error.message}`);
@@ -447,7 +475,7 @@ function Messages() {
 
   useEffect(() => {
     if (activeTab === 'sent') {
-      fetchSentMessages();
+      fetchSentMessages(1);
     }
   }, [activeTab]);
 
@@ -534,7 +562,7 @@ function Messages() {
       }
 
       // Refresh messages list
-      fetchSentMessages();
+      fetchSentMessages(sentMessagesPage, dateFilter);
       
     } catch (error) {
       console.error('Error resending messages:', error);
@@ -570,7 +598,7 @@ function Messages() {
 
       setReplyTo(null);
       setReplyMessage('');
-      fetchSentMessages(); // Refresh the list
+      fetchSentMessages(sentMessagesPage, dateFilter); // Refresh the list
     } catch (error) {
       console.error('Error sending message:', error);
       toast({
@@ -579,6 +607,21 @@ function Messages() {
         variant: "destructive"
       });
     }
+  };
+
+  const handleLoadMoreMessages = () => {
+    fetchSentMessages(sentMessagesPage + 1, dateFilter.startDate ? dateFilter : null);
+  };
+
+  const handleDateFilterSubmit = (e) => {
+    e.preventDefault();
+    fetchSentMessages(1, dateFilter);
+  };
+
+  const handleDateFilterReset = () => {
+    setDateFilter({ startDate: '', endDate: '' });
+    fetchSentMessages(1);
+    setShowDateFilter(false);
   };
 
   return (
@@ -817,17 +860,70 @@ function Messages() {
       {activeTab === 'sent' && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Sent Messages</span>
-              <Button
-                onClick={fetchSentMessages} 
-                variant="outline"
-                className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                disabled={isLoadingSent}
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoadingSent ? 'animate-spin' : ''}`} />
-              </Button>
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl">Sent Messages</CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDateFilter(!showDateFilter)}
+                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                >
+                  <Calendar className="h-4 w-4 mr-1" />
+                  Filter
+                </Button>
+                <Button
+                  onClick={() => fetchSentMessages(1)} 
+                  variant="outline"
+                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  disabled={isLoadingSent}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoadingSent ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+            </div>
+            
+            {showDateFilter && (
+              <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+                <form onSubmit={handleDateFilterSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Start Date</label>
+                    <Input 
+                      type="date" 
+                      value={dateFilter.startDate}
+                      onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">End Date</label>
+                    <Input 
+                      type="date" 
+                      value={dateFilter.endDate}
+                      onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full"
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button 
+                      type="submit" 
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      disabled={isLoadingSent}
+                    >
+                      Apply Filter
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline"
+                      onClick={handleDateFilterReset}
+                      disabled={isLoadingSent}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             {isLoadingSent ? (
@@ -835,49 +931,69 @@ function Messages() {
                 <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
               </div>
             ) : sentMessages.length > 0 ? (
-              <div className="space-y-4">
-                {sentMessages.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt)).map((msg) => (
-                  <Card 
-                    key={msg.id} 
-                    className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setSelectedMessage(msg)}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900">
-                          To: {msg.totalRecipients || msg.recipients.length} recipient{(msg.totalRecipients || msg.recipients.length) !== 1 ? 's' : ''}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          ({msg.status.delivered || 0} delivered, {msg.status.failed || 0} failed)
-                        </span>
+              <>
+                <div className="space-y-4">
+                  {sentMessages.map((msg) => (
+                    <Card 
+                      key={msg.id} 
+                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => setSelectedMessage(msg)}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">
+                            To: {msg.totalRecipients || msg.recipients.length} recipient{(msg.totalRecipients || msg.recipients.length) !== 1 ? 's' : ''}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ({msg.status.delivered || 0} delivered, {msg.status.failed || 0} failed)
+                          </span>
+                        </div>
+                        {(msg.status.failed > 0) && (
+                          <Button 
+                            variant="outline"
+                            size="sm"
+                            className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleResendFailed(msg);
+                            }}
+                          >
+                            Resend Failed
+                          </Button>
+                        )}
                       </div>
-                      {(msg.status.failed > 0) && (
-                        <Button 
-                          variant="outline"
-                          size="sm"
-                          className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleResendFailed(msg);
-                          }}
-                        >
-                          Resend Failed
-                        </Button>
+                      <p className="text-sm text-gray-600 line-clamp-2">{msg.message}</p>
+                      <div className="mt-2 text-xs text-gray-500">
+                        {new Date(msg.sentAt).toLocaleString()}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+                
+                {hasMoreSentMessages && (
+                  <div className="mt-6 text-center">
+                    <Button
+                      variant="outline"
+                      onClick={handleLoadMoreMessages}
+                      disabled={isLoadingSent}
+                      className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    >
+                      {isLoadingSent ? (
+                        <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 mr-2" />
                       )}
-                    </div>
-                    <p className="text-sm text-gray-600 line-clamp-2">{msg.message}</p>
-                    <div className="mt-2 text-xs text-gray-500">
-                      {new Date(msg.sentAt).toLocaleString()}
-                    </div>
-                  </Card>
-                ))}
-              </div>
+                      Load More
+                    </Button>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-8">
                 <Send className="w-8 h-8 text-gray-300 mx-auto mb-3" />
                 <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
                 <p className="text-sm text-gray-500">
-                  You haven't sent any messages yet
+                  {dateFilter.startDate ? 'No messages found in the selected date range' : 'You haven\'t sent any messages yet'}
                 </p>
               </div>
             )}
@@ -888,17 +1004,17 @@ function Messages() {
       {selectedMessage && (
         <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
           <DialogContent 
-            className="sm:max-w-[600px]"
+            className="sm:max-w-[600px] max-h-[90vh] flex flex-col overflow-hidden"
             aria-describedby="message-details-description"
           >
-            <DialogHeader className="border-b pb-4">
+            <DialogHeader className="border-b pb-4 shrink-0">
               <DialogTitle className="text-xl">Message Details</DialogTitle>
               <DialogDescription id="message-details-description">
                 {selectedMessage.sender ? 'Received message details' : 'Sent message details'}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto">
               {/* Message */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-500">Message</label>
@@ -997,7 +1113,7 @@ function Messages() {
               )}
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex justify-end gap-3 pt-4 border-t mt-auto shrink-0">
               {selectedMessage.sender ? (
                 // Buttons for inbox messages
                 <>

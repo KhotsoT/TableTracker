@@ -269,18 +269,34 @@ app.get('/api/balance', async (req, res) => {
   }
 });
 
-// Update the sent-messages endpoint with better pagination and logging
+// Update the sent-messages endpoint with better pagination and date filtering
 app.get('/api/sent-messages', async (req, res) => {
   try {
+    // Get pagination and filter parameters from request
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+    
+    // Add one day to end date to include the entire day
+    if (endDate) {
+      endDate.setDate(endDate.getDate() + 1);
+    }
+    
+    console.log('Fetching sent messages with params:', { 
+      page, 
+      limit, 
+      startDate: startDate?.toISOString(), 
+      endDate: endDate?.toISOString() 
+    });
+
     let allMessages = [];
     let currentPage = 1;
     let hasMoreMessages = true;
     
-    console.log('Starting to fetch messages...');
-
-    // Fetch messages until we get an empty page
+    // Fetch messages from API
     while (hasMoreMessages) {
-      console.log(`Fetching page ${currentPage}...`);
+      console.log(`Fetching API page ${currentPage}...`);
       
       const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
         method: 'GET',
@@ -293,8 +309,7 @@ app.get('/api/sent-messages', async (req, res) => {
       });
 
       const responseText = await response.text();
-      console.log(`Page ${currentPage} response:`, responseText.substring(0, 200) + '...'); // Log first 200 chars
-
+      
       if (!response.ok) {
         throw new Error(`API responded with status ${response.status}: ${responseText}`);
       }
@@ -314,19 +329,43 @@ app.get('/api/sent-messages', async (req, res) => {
 
       // Add a small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // If we have enough messages for multiple pages, we can stop fetching
+      // This optimization prevents fetching all messages when we only need a subset
+      if (allMessages.length > limit * 5 && !startDate && !endDate) {
+        console.log(`Stopping fetch early - collected ${allMessages.length} messages`);
+        break;
+      }
     }
 
-    console.log(`Total messages fetched: ${allMessages.length}`);
+    console.log(`Total messages fetched from API: ${allMessages.length}`);
 
-    // Group messages by content and time (within same hour instead of minute)
+    // Apply date filtering if specified
+    if (startDate || endDate) {
+      allMessages = allMessages.filter(msg => {
+        const msgDate = new Date(msg.dateTimeSent);
+        
+        if (startDate && msgDate < startDate) {
+          return false;
+        }
+        
+        if (endDate && msgDate > endDate) {
+          return false;
+        }
+        
+        return true;
+      });
+      
+      console.log(`After date filtering: ${allMessages.length} messages`);
+    }
+
+    // Group messages by content
     const groupedMessages = allMessages.reduce((groups, msg) => {
       // Skip messages without content
       if (!msg.message) return groups;
       
       // Use only the message content as the key - ignore time completely
       const key = `${msg.message}`;
-      
-      console.log(`Processing message: ${msg.messageId}, content: ${msg.message.substring(0, 20)}..., time: ${msg.dateTimeSent}`);
 
       if (!groups[key]) {
         groups[key] = {
@@ -342,9 +381,6 @@ app.get('/api/sent-messages', async (req, res) => {
             pending: 0
           }
         };
-        console.log(`Created new group with key: ${key}`);
-      } else {
-        console.log(`Adding to existing group with key: ${key}, current recipients: ${groups[key].totalRecipients}`);
       }
 
       groups[key].recipients.push({
@@ -363,17 +399,28 @@ app.get('/api/sent-messages', async (req, res) => {
       return groups;
     }, {});
 
-    const messages = Object.values(groupedMessages)
+    // Convert to array and sort by date (newest first)
+    let messages = Object.values(groupedMessages)
       .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
 
     console.log(`Grouped into ${messages.length} unique messages`);
-    messages.forEach((msg, index) => {
-      console.log(`Message ${index + 1}: ${msg.message.substring(0, 20)}..., recipients: ${msg.totalRecipients}, delivered: ${msg.status.delivered}, failed: ${msg.status.failed}`);
-    });
+    
+    // Apply pagination to the grouped messages
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedMessages = messages.slice(startIndex, endIndex);
+    
+    console.log(`Returning page ${page} with ${paginatedMessages.length} messages (${startIndex}-${endIndex})`);
 
     res.json({
       success: true,
-      messages
+      messages: paginatedMessages,
+      pagination: {
+        page,
+        limit,
+        total: messages.length,
+        totalPages: Math.ceil(messages.length / limit)
+      }
     });
   } catch (error) {
     console.error('Error fetching sent messages:', error);
