@@ -127,6 +127,8 @@ function Messages() {
         params.append('endDate', dateRange.endDate);
       }
       
+      console.log('Fetching sent messages with params:', params.toString());
+      
       const response = await fetch(`${API_BASE_URL}/sent-messages?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch sent messages: ${response.status}`);

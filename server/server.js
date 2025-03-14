@@ -290,12 +290,13 @@ app.get('/api/sent-messages', async (req, res) => {
       endDate: endDate?.toISOString() 
     });
 
+    // Fetch all messages first (we'll paginate after grouping)
     let allMessages = [];
     let currentPage = 1;
     let hasMoreMessages = true;
     
     // Fetch messages from API
-    while (hasMoreMessages) {
+    while (hasMoreMessages && currentPage <= 5) { // Limit to 5 pages to avoid excessive API calls
       console.log(`Fetching API page ${currentPage}...`);
       
       const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
@@ -308,20 +309,18 @@ app.get('/api/sent-messages', async (req, res) => {
         }
       });
 
-      const responseText = await response.text();
-      
       if (!response.ok) {
-        throw new Error(`API responded with status ${response.status}: ${responseText}`);
+        const errorText = await response.text();
+        throw new Error(`API responded with status ${response.status}: ${errorText}`);
       }
 
-      const data = JSON.parse(responseText);
+      const data = await response.json();
       const messages = data.webServiceMessages || [];
       
       console.log(`Found ${messages.length} messages on page ${currentPage}`);
       
       if (messages.length === 0) {
         hasMoreMessages = false;
-        console.log('No more messages found');
       } else {
         allMessages = [...allMessages, ...messages];
         currentPage++;
@@ -329,13 +328,6 @@ app.get('/api/sent-messages', async (req, res) => {
 
       // Add a small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // If we have enough messages for multiple pages, we can stop fetching
-      // This optimization prevents fetching all messages when we only need a subset
-      if (allMessages.length > limit * 5 && !startDate && !endDate) {
-        console.log(`Stopping fetch early - collected ${allMessages.length} messages`);
-        break;
-      }
     }
 
     console.log(`Total messages fetched from API: ${allMessages.length}`);
