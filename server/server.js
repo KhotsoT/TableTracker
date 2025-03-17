@@ -1,8 +1,18 @@
-const express = require('express');
-const cors = require('cors');
-const fetch = require('node-fetch');
-const admin = require('firebase-admin');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
+import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables from server/.env
+dotenv.config({ path: join(__dirname, '.env') });
 
 // Initialize Firebase Admin SDK
 let serviceAccount;
@@ -272,153 +282,166 @@ app.get('/api/balance', async (req, res) => {
 // Update the sent-messages endpoint with better pagination and date filtering
 app.get('/api/sent-messages', async (req, res) => {
   try {
-    // Get pagination and filter parameters from request
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const startDate = req.query.startDate ? new Date(req.query.startDate) : null;
-    const endDate = req.query.endDate ? new Date(req.query.endDate) : null;
+    const afterDate = req.query.afterDate ? new Date(req.query.afterDate).getTime() : null;
+    const beforeDate = req.query.beforeDate ? new Date(req.query.beforeDate).getTime() : null;
+    const useCache = req.query.useCache !== 'false';
     
-    // Add one day to end date to include the entire day
-    if (endDate) {
-      endDate.setDate(endDate.getDate() + 1);
-    }
-    
-    console.log('Fetching sent messages with params:', { 
-      page, 
-      limit, 
-      startDate: startDate?.toISOString(), 
-      endDate: endDate?.toISOString() 
-    });
+    console.log('Fetching messages with params:', { page, limit, afterDate, beforeDate, useCache });
 
-    // Fetch all messages first (we'll paginate after grouping)
     let allMessages = [];
-    let currentPage = 1;
-    let hasMoreMessages = true;
-    
-    // Fetch messages from API
-    while (hasMoreMessages && currentPage <= 5) { // Limit to 5 pages to avoid excessive API calls
-      console.log(`Fetching API page ${currentPage}...`);
-      
-      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'email': process.env.ZOOM_CONNECT_EMAIL,
-          'token': process.env.ZOOM_CONNECT_KEY
+
+    // Try to use cache if available and requested
+    if (useCache && messageCache.messages.length > 0) {
+      console.log('Using cached messages');
+      allMessages = messageCache.messages;
+    } else {
+      // Fetch from API if cache not available or not requested
+      let currentPage = 1;
+      let hasMoreMessages = true;
+
+      while (hasMoreMessages) {
+        console.log(`Fetching page ${currentPage}...`);
+        
+        const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'email': process.env.ZOOM_CONNECT_EMAIL,
+            'token': process.env.ZOOM_CONNECT_KEY
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`API responded with status ${response.status}`);
         }
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API responded with status ${response.status}: ${errorText}`);
+        const data = await response.json();
+        const messages = data.webServiceMessages || [];
+        
+        if (messages.length === 0) {
+          hasMoreMessages = false;
+          console.log('No more messages found');
+          break;
+        }
+
+        // Check date boundaries
+        const shouldContinue = messages.some(msg => {
+          const msgDate = new Date(msg.dateTimeSent).getTime();
+          if (afterDate && msgDate < afterDate) return false;
+          if (beforeDate && msgDate > beforeDate) return false;
+          return true;
+        });
+
+        // Filter messages within date range
+        const filteredMessages = messages.filter(msg => {
+          const msgDate = new Date(msg.dateTimeSent).getTime();
+          if (afterDate && msgDate < afterDate) return false;
+          if (beforeDate && msgDate > beforeDate) return false;
+          return true;
+        });
+
+        allMessages = [...allMessages, ...filteredMessages];
+        
+        if (!shouldContinue) {
+          hasMoreMessages = false;
+          console.log('Reached date boundary');
+        } else {
+          currentPage++;
+        }
+
+        // Add a small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-
-      const data = await response.json();
-      const messages = data.webServiceMessages || [];
-      
-      console.log(`Found ${messages.length} messages on page ${currentPage}`);
-      
-      if (messages.length === 0) {
-        hasMoreMessages = false;
-      } else {
-        allMessages = [...allMessages, ...messages];
-        currentPage++;
-      }
-
-      // Add a small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    console.log(`Total messages fetched from API: ${allMessages.length}`);
-
-    // Apply date filtering if specified
-    if (startDate || endDate) {
+    // Apply date filters to cached messages if needed
+    if (useCache && (afterDate || beforeDate)) {
       allMessages = allMessages.filter(msg => {
-        const msgDate = new Date(msg.dateTimeSent);
-        
-        if (startDate && msgDate < startDate) {
-          return false;
-        }
-        
-        if (endDate && msgDate > endDate) {
-          return false;
-        }
-        
+        const msgDate = new Date(msg.dateTimeSent).getTime();
+        if (afterDate && msgDate < afterDate) return false;
+        if (beforeDate && msgDate > beforeDate) return false;
         return true;
       });
-      
-      console.log(`After date filtering: ${allMessages.length} messages`);
     }
 
-    // Group messages by content
-    const groupedMessages = allMessages.reduce((groups, msg) => {
-      // Skip messages without content
-      if (!msg.message) return groups;
-      
-      // Use only the message content as the key - ignore time completely
-      const key = `${msg.message}`;
+    console.log(`Total messages available: ${allMessages.length}`);
 
-      if (!groups[key]) {
-        groups[key] = {
+    // Group messages by content
+    const messageGroups = {};
+    
+    allMessages.forEach(msg => {
+      if (!msg.message) return;
+      
+      const messageKey = msg.message;
+      
+      if (!messageGroups[messageKey]) {
+        messageGroups[messageKey] = {
           id: msg.messageId,
           message: msg.message,
           sentAt: msg.dateTimeSent,
           recipients: [],
           totalRecipients: 0,
-          totalCredits: 0,
-          status: {
-            delivered: 0,
-            failed: 0,
-            pending: 0
-          }
+          status: { delivered: 0, failed: 0, pending: 0 },
+          totalCredits: 0
         };
       }
 
-      groups[key].recipients.push({
-        number: msg.toNumber,
-        status: msg.messageStatus?.toLowerCase() || 'pending',
-        credits: msg.creditCost || 1
-      });
-
-      groups[key].totalRecipients++;
-      groups[key].totalCredits += (msg.creditCost || 1);
-      
-      // Ensure we have a valid status
+      const group = messageGroups[messageKey];
       const status = msg.messageStatus?.toLowerCase() || 'pending';
-      groups[key].status[status] = (groups[key].status[status] || 0) + 1;
+      
+      // Check if recipient already exists
+      const recipientExists = group.recipients.some(r => r.number === msg.toNumber);
+      
+      if (!recipientExists) {
+        group.recipients.push({
+          number: msg.toNumber,
+          status: status,
+          credits: msg.creditCost || 1
+        });
+        
+        group.totalRecipients++;
+        group.totalCredits += (msg.creditCost || 1);
+        group.status[status]++;
+      }
+    });
 
-      return groups;
-    }, {});
-
-    // Convert to array and sort by date (newest first)
-    let messages = Object.values(groupedMessages)
+    // Convert to array and sort by date
+    const sortedGroups = Object.values(messageGroups)
       .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
 
-    console.log(`Grouped into ${messages.length} unique messages`);
-    
-    // Apply pagination to the grouped messages
+    // Apply pagination
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    const paginatedMessages = messages.slice(startIndex, endIndex);
-    
-    console.log(`Returning page ${page} with ${paginatedMessages.length} messages (${startIndex}-${endIndex})`);
+    const paginatedGroups = sortedGroups.slice(startIndex, endIndex);
+
+    console.log(`Returning ${paginatedGroups.length} messages (page ${page})`);
 
     res.json({
       success: true,
-      messages: paginatedMessages,
+      messages: paginatedGroups,
       pagination: {
         page,
         limit,
-        total: messages.length,
-        totalPages: Math.ceil(messages.length / limit)
+        total: sortedGroups.length,
+        hasMore: endIndex < sortedGroups.length
+      },
+      metadata: {
+        lastFetched: useCache ? messageCache.lastUpdated : new Date().toISOString(),
+        fromCache: useCache && messageCache.messages.length > 0,
+        dateRange: {
+          start: afterDate ? new Date(afterDate).toISOString() : null,
+          end: beforeDate ? new Date(beforeDate).toISOString() : null
+        }
       }
     });
   } catch (error) {
-    console.error('Error fetching sent messages:', error);
+    console.error('Error in sent-messages endpoint:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Failed to fetch sent messages'
     });
   }
 });
@@ -600,7 +623,103 @@ app.get('/api/inbox-messages', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 10000;
+// In-memory cache for messages
+const messageCache = {
+  messages: [],
+  lastUpdated: null,
+  isUpdating: false
+};
+
+// Background message fetch endpoint
+app.post('/api/messages/background-fetch', async (req, res) => {
+  try {
+    // If already updating, return status
+    if (messageCache.isUpdating) {
+      return res.json({
+        success: true,
+        status: 'in_progress',
+        lastUpdated: messageCache.lastUpdated
+      });
+    }
+
+    // Start background fetch
+    messageCache.isUpdating = true;
+    
+    // Send immediate response
+    res.json({
+      success: true,
+      status: 'started',
+      lastUpdated: messageCache.lastUpdated
+    });
+
+    // Perform fetch in background
+    try {
+      let allMessages = [];
+      let currentPage = 1;
+      let hasMoreMessages = true;
+
+      while (hasMoreMessages) {
+        console.log(`Background fetch: page ${currentPage}`);
+        
+        const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=OUTBOUND&page=${currentPage}&pageSize=100`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'email': process.env.ZOOM_CONNECT_EMAIL,
+            'token': process.env.ZOOM_CONNECT_KEY
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`API responded with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const messages = data.webServiceMessages || [];
+        
+        if (messages.length === 0) {
+          hasMoreMessages = false;
+          console.log('Background fetch: No more messages');
+          break;
+        }
+
+        allMessages = [...allMessages, ...messages];
+        currentPage++;
+
+        // Add a small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Update cache
+      messageCache.messages = allMessages;
+      messageCache.lastUpdated = new Date().toISOString();
+      console.log(`Background fetch complete: ${allMessages.length} messages cached`);
+    } catch (error) {
+      console.error('Background fetch error:', error);
+    } finally {
+      messageCache.isUpdating = false;
+    }
+  } catch (error) {
+    console.error('Error starting background fetch:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to start background fetch'
+    });
+  }
+});
+
+// Cache status endpoint
+app.get('/api/messages/cache-status', (req, res) => {
+  res.json({
+    success: true,
+    isUpdating: messageCache.isUpdating,
+    lastUpdated: messageCache.lastUpdated,
+    totalMessages: messageCache.messages.length
+  });
+});
+
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log('Using API key:', process.env.ZOOM_CONNECT_KEY?.substring(0, 8) + '...');

@@ -58,11 +58,55 @@ function Messages() {
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
 
+  // Add new state variables for cache handling
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  const [cacheStatus, setCacheStatus] = useState(null);
+
   useEffect(() => {
+    initializeCache();
     fetchContacts();
-    fetchSentMessages();
     fetchCredits();
   }, []);
+
+  // Add cache initialization function
+  const initializeCache = async () => {
+    try {
+      // Start background fetch
+      const response = await fetch(`${API_BASE_URL}/messages/background-fetch`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        // Start polling for cache status
+        pollCacheStatus();
+      }
+    } catch (error) {
+      console.error('Error initializing cache:', error);
+    }
+  };
+
+  // Add cache status polling function
+  const pollCacheStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/cache-status`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setCacheStatus(data);
+        
+        // If still updating, poll again in 5 seconds
+        if (data.isUpdating) {
+          setTimeout(pollCacheStatus, 5000);
+        } else {
+          // Cache is ready, fetch messages
+          fetchSentMessages(1, dateFilter);
+        }
+      }
+    } catch (error) {
+      console.error('Error polling cache status:', error);
+    }
+  };
 
   const fetchContacts = async () => {
     try {
@@ -118,13 +162,14 @@ function Messages() {
       const params = new URLSearchParams();
       params.append('page', page);
       params.append('limit', MESSAGES_PER_PAGE);
+      params.append('useCache', 'true'); // Enable cache by default
       
-      if (dateRange && dateRange.startDate) {
-        params.append('startDate', dateRange.startDate);
+      if (dateRange?.startDate) {
+        params.append('afterDate', dateRange.startDate);
       }
       
-      if (dateRange && dateRange.endDate) {
-        params.append('endDate', dateRange.endDate);
+      if (dateRange?.endDate) {
+        params.append('beforeDate', dateRange.endDate);
       }
       
       console.log('Fetching sent messages with params:', params.toString());
@@ -148,8 +193,17 @@ function Messages() {
       }
       
       // Check if there are more messages to load
-      setHasMoreSentMessages(data.messages.length === MESSAGES_PER_PAGE);
+      setHasMoreSentMessages(data.pagination.hasMore);
       setSentMessagesPage(page);
+
+      // Update cache status if provided
+      if (data.metadata) {
+        setCacheStatus(prev => ({
+          ...prev,
+          lastUpdated: data.metadata.lastFetched,
+          fromCache: data.metadata.fromCache
+        }));
+      }
     } catch (error) {
       console.error('Error fetching sent messages:', error);
       setError(`Failed to fetch sent messages: ${error.message}`);
@@ -626,382 +680,364 @@ function Messages() {
     setShowDateFilter(false);
   };
 
+  // Add refresh function to force fetch from API
+  const refreshSentMessages = async () => {
+    try {
+      setIsLoadingSent(true);
+      
+      // First, start a new background fetch
+      await fetch(`${API_BASE_URL}/messages/background-fetch`, {
+        method: 'POST'
+      });
+      
+      // Then fetch messages without cache
+      const params = new URLSearchParams();
+      params.append('page', 1);
+      params.append('limit', MESSAGES_PER_PAGE);
+      params.append('useCache', 'false');
+      
+      const response = await fetch(`${API_BASE_URL}/sent-messages?${params.toString()}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setSentMessages(data.messages);
+        setHasMoreSentMessages(data.pagination.hasMore);
+        setSentMessagesPage(1);
+        
+        // Start polling cache status again
+        pollCacheStatus();
+        
+        toast({
+          title: "Messages Refreshed",
+          description: "Successfully fetched latest messages from server.",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing messages:', error);
+      toast({
+        title: "Refresh Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoadingSent(false);
+    }
+  };
+
   return (
-    <div className="p-4 md:p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Messages</h1>
-        <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
-          Credits: <span className="font-medium">{credits}</span>
-        </div>
-      </div>
+    <div className="container mx-auto p-4">
+      <Tabs defaultValue="new" value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="new">
+            <MessageSquare className="w-4 h-4 mr-2" />
+            New Message
+          </TabsTrigger>
+          <TabsTrigger value="inbox">
+            <Inbox className="w-4 h-4 mr-2" />
+            Inbox
+          </TabsTrigger>
+          <TabsTrigger value="sent">
+            <Send className="w-4 h-4 mr-2" />
+            Sent
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Tabs */}
-      <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg mb-6 w-fit">
-        <Button
-          variant={activeTab === 'new' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('new')}
-          className="rounded-md px-4"
-        >
-          New SMS
-        </Button>
-        <Button
-          variant={activeTab === 'inbox' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('inbox')}
-          className="rounded-md px-4"
-        >
-          Inbox
-        </Button>
-        <Button
-          variant={activeTab === 'sent' ? "secondary" : "ghost"}
-          onClick={() => setActiveTab('sent')}
-          className="rounded-md px-4"
-        >
-          Sent
-        </Button>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2 mb-6">
-          <AlertCircle className="w-4 h-4" />
-          {error}
-        </div>
-      )}
-
-      {showSuccess && (
-        <div className="mb-6 p-4 rounded-lg bg-green-50 text-green-700 flex items-center gap-2">
-          <FaCheck className="w-5 h-5" />
-          <span>Messages sent successfully to {previewRecipients.length} recipients!</span>
-        </div>
-      )}
-
-      {activeTab === 'new' && (
-        <Card className="p-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
-          <form onSubmit={handleSubmit}>
-            {/* Top section with dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Grade</label>
-                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                  <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                    <SelectValue placeholder="Select Grade" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {grades.map(grade => (
-                      <SelectItem 
-                        key={grade} 
-                        value={grade}
-                        className="cursor-pointer hover:bg-[#646cff] hover:text-white"
-                      >
-                        {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-2 block">Send To</label>
-                <Select value={selectedContact} onValueChange={setSelectedContact}>
-                  <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                    <SelectValue placeholder="Select Recipients" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="primary">Primary Contact</SelectItem>
-                    <SelectItem value="both">Both Parents</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Main content area - split into two columns */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Left column - Message input */}
-              <div className="space-y-4">
-                <label className="text-sm font-medium block">Message</label>
-                <Textarea
-                  value={message}
-                  onChange={handleMessageChange}
-                  placeholder="Type your message here..."
-                  className="min-h-[240px] resize-y"
-                />
-                <div className="text-sm text-gray-500">
-                  <span className="text-blue-600">{message.length}</span> characters • 
-                  <span className="text-blue-600">{Math.ceil(message.length / 160)}</span> SMS segments
+        <TabsContent value="new">
+          <Card className="p-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
+            <form onSubmit={handleSubmit}>
+              {/* Top section with dropdowns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Grade</label>
+                  <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                      <SelectValue placeholder="Select Grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grades.map(grade => (
+                        <SelectItem 
+                          key={grade} 
+                          value={grade}
+                          className="cursor-pointer hover:bg-[#646cff] hover:text-white"
+                        >
+                          {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button
-                  type="submit"
-                  disabled={isLoading || !message.trim() || previewRecipients.length === 0}
-                  className="w-full bg-[#646cff] hover:bg-[#535bf2] text-white mt-6"
-                >
-                  {isLoading ? (
-                    <>
-                      <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4 mr-2" />
-                      Send Message
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {/* Right column - Recipients preview */}
-              {previewRecipients.length > 0 && (
-                <div className="bg-gray-50 rounded-lg p-6 h-full">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Users className="w-5 h-5 text-gray-500" />
-                    <span className="font-medium">Recipients (<span className="text-blue-600">{previewRecipients.length}</span>)</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
-                    <FaGraduationCap className="w-4 h-4" />
-                    <span>
-                      {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
-                      {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
-                    </span>
-                  </div>
-
-                  <div className="max-h-[240px] overflow-y-auto border rounded-lg bg-white">
-                    {previewRecipients.map((recipient, index) => (
-                      <div key={index} 
-                        className="text-sm flex justify-between items-center p-3 border-b last:border-b-0 hover:bg-gray-50"
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-medium text-gray-900">{recipient.name}</span>
-                          <span className="text-gray-500 text-xs">Grade {recipient.grade} • {recipient.relation}</span>
-                        </div>
-                        <span className="text-blue-600 font-medium">{recipient.number}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 text-sm text-gray-600 flex items-center justify-between">
-                    <span>Total recipients: <span className="text-blue-600 font-medium">{previewRecipients.length}</span></span>
-                    <span>•</span>
-                    {estimatedCredits > 0 && (
-                      <span>Estimated credits: <span className="text-blue-600 font-medium">{estimatedCredits}</span></span>
-                    )}
-                  </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Send To</label>
+                  <Select value={selectedContact} onValueChange={setSelectedContact}>
+                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                      <SelectValue placeholder="Select Recipients" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="primary">Primary Contact</SelectItem>
+                      <SelectItem value="both">Both Parents</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            </div>
-          </form>
-        </Card>
-      )}
+              </div>
 
-      {activeTab === 'inbox' && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
-              <Button 
-                onClick={fetchInboxMessages}
-                variant="outline"
-                className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                disabled={isLoadingInbox}
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoadingInbox ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <div className="mb-4 p-4 rounded-lg bg-red-50 text-red-700 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5" />
-                <span>{error}</span>
-              </div>
-            )}
-            
-            {isLoadingInbox ? (
-              <div className="flex items-center justify-center py-8">
-                <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
-              </div>
-            ) : inboxMessages.length > 0 ? (
-              <div className="space-y-4">
-                {inboxMessages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt)).map((msg) => (
-                  <Card 
-                    key={msg.id || msg.receivedAt} 
-                    className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => setSelectedMessage(msg)}
+              {/* Main content area - split into two columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Left column - Message input */}
+                <div className="space-y-4">
+                  <label className="text-sm font-medium block">Message</label>
+                  <Textarea
+                    value={message}
+                    onChange={handleMessageChange}
+                    placeholder="Type your message here..."
+                    className="min-h-[240px] resize-y"
+                  />
+                  <div className="text-sm text-gray-500">
+                    <span className="text-blue-600">{message.length}</span> characters • 
+                    <span className="text-blue-600">{Math.ceil(message.length / 160)}</span> SMS segments
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={isLoading || !message.trim() || previewRecipients.length === 0}
+                    className="w-full bg-[#646cff] hover:bg-[#535bf2] text-white mt-6"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900">
-                          From: {msg.sender}
-                        </span>
-                        <span className={`px-2 py-0.5 text-xs rounded-full ${
-                          msg.status === 'received' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {msg.status}
-                        </span>
-                      </div>
-                      <span className="text-sm text-gray-500">
-                        {new Date(msg.receivedAt).toLocaleString()}
+                    {isLoading ? (
+                      <>
+                        <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 mr-2" />
+                        Send Message
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Right column - Recipients preview */}
+                {previewRecipients.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-6 h-full">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Users className="w-5 h-5 text-gray-500" />
+                      <span className="font-medium">Recipients (<span className="text-blue-600">{previewRecipients.length}</span>)</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+                      <FaGraduationCap className="w-4 h-4" />
+                      <span>
+                        {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
+                        {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">{msg.message}</p>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
-                <p className="text-sm text-gray-500">
-                  Your inbox is currently empty
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
-      {activeTab === 'sent' && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl">Sent Messages</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
+                    <div className="max-h-[240px] overflow-y-auto border rounded-lg bg-white">
+                      {previewRecipients.map((recipient, index) => (
+                        <div key={index} 
+                          className="text-sm flex justify-between items-center p-3 border-b last:border-b-0 hover:bg-gray-50"
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-medium text-gray-900">{recipient.name}</span>
+                            <span className="text-gray-500 text-xs">Grade {recipient.grade} • {recipient.relation}</span>
+                          </div>
+                          <span className="text-blue-600 font-medium">{recipient.number}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 text-sm text-gray-600 flex items-center justify-between">
+                      <span>Total recipients: <span className="text-blue-600 font-medium">{previewRecipients.length}</span></span>
+                      <span>•</span>
+                      {estimatedCredits > 0 && (
+                        <span>Estimated credits: <span className="text-blue-600 font-medium">{estimatedCredits}</span></span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </form>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inbox">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
+                <Button 
+                  onClick={fetchInboxMessages}
                   variant="outline"
-                  size="sm"
-                  onClick={() => setShowDateFilter(!showDateFilter)}
                   className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                  disabled={isLoadingInbox}
                 >
-                  <Calendar className="h-4 w-4 mr-1" />
-                  Filter
-                </Button>
-                <Button
-                  onClick={() => fetchSentMessages(1)} 
-                  variant="outline"
-                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                  disabled={isLoadingSent}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isLoadingSent ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-4 w-4 ${isLoadingInbox ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
-            </div>
-            
-            {showDateFilter && (
-              <div className="mt-4 p-4 border rounded-lg bg-gray-50">
-                <form onSubmit={handleDateFilterSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">Start Date</label>
-                    <Input 
-                      type="date" 
-                      value={dateFilter.startDate}
-                      onChange={(e) => setDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">End Date</label>
-                    <Input 
-                      type="date" 
-                      value={dateFilter.endDate}
-                      onChange={(e) => setDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <Button 
-                      type="submit" 
-                      className="bg-blue-600 text-white hover:bg-blue-700"
-                      disabled={isLoadingSent}
-                    >
-                      Apply Filter
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="outline"
-                      onClick={handleDateFilterReset}
-                      disabled={isLoadingSent}
-                    >
-                      Reset
-                    </Button>
-                  </div>
-                </form>
-              </div>
-            )}
-          </CardHeader>
-          <CardContent>
-            {isLoadingSent ? (
-              <div className="flex items-center justify-center py-8">
-                <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
-              </div>
-            ) : sentMessages.length > 0 ? (
-              <>
+            </CardHeader>
+            <CardContent>
+              {error && (
+                <div className="mb-4 p-4 rounded-lg bg-red-50 text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  <span>{error}</span>
+                </div>
+              )}
+              
+              {isLoadingInbox ? (
+                <div className="flex items-center justify-center py-8">
+                  <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : inboxMessages.length > 0 ? (
                 <div className="space-y-4">
-                  {sentMessages.map((msg) => (
+                  {inboxMessages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt)).map((msg) => (
                     <Card 
-                      key={msg.id} 
+                      key={msg.id || msg.receivedAt} 
                       className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                       onClick={() => setSelectedMessage(msg)}
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-900">
-                            To: {msg.totalRecipients || msg.recipients.length} recipient{(msg.totalRecipients || msg.recipients.length) !== 1 ? 's' : ''}
+                            From: {msg.sender}
                           </span>
-                          <span className="text-xs text-gray-500">
-                            ({msg.status.delivered || 0} delivered, {msg.status.failed || 0} failed)
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            msg.status === 'received' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {msg.status}
                           </span>
                         </div>
-                        {(msg.status.failed > 0) && (
-                          <Button 
-                            variant="outline"
-                            size="sm"
-                            className="border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-600"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleResendFailed(msg);
-                            }}
-                          >
-                            Resend Failed
-                          </Button>
-                        )}
+                        <span className="text-sm text-gray-500">
+                          {new Date(msg.receivedAt).toLocaleString()}
+                        </span>
                       </div>
-                      <p className="text-sm text-gray-600 line-clamp-2">{msg.message}</p>
-                      <div className="mt-2 text-xs text-gray-500">
-                        {new Date(msg.sentAt).toLocaleString()}
-                      </div>
+                      <p className="text-sm text-gray-600">{msg.message}</p>
                     </Card>
                   ))}
                 </div>
-                
-                {hasMoreSentMessages && (
-                  <div className="mt-6 text-center">
-                    <Button
-                      variant="outline"
-                      onClick={handleLoadMoreMessages}
-                      disabled={isLoadingSent}
-                      className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                    >
-                      {isLoadingSent ? (
-                        <FaSpinner className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                      )}
-                      Load More
-                    </Button>
+              ) : (
+                <div className="text-center py-8">
+                  <Mail className="w-8 h-8 text-gray-300 mx-auto mb-3" />
+                  <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
+                  <p className="text-sm text-gray-500">
+                    Your inbox is currently empty
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sent">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Sent Messages</h2>
+              <div className="flex items-center gap-4">
+                {cacheStatus?.isUpdating && (
+                  <div className="flex items-center text-sm text-yellow-600">
+                    <FaSpinner className="animate-spin mr-2" />
+                    Updating cache...
                   </div>
                 )}
-              </>
-            ) : (
-              <div className="text-center py-8">
-                <Send className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                <h3 className="text-base font-medium text-gray-900 mb-1">No Messages</h3>
-                <p className="text-sm text-gray-500">
-                  {dateFilter.startDate ? 'No messages found in the selected date range' : 'You haven\'t sent any messages yet'}
-                </p>
+                {cacheStatus?.lastUpdated && (
+                  <span className="text-sm text-gray-500">
+                    Last updated: {new Date(cacheStatus.lastUpdated).toLocaleString()}
+                  </span>
+                )}
+                <Button
+                  onClick={refreshSentMessages}
+                  disabled={isLoadingSent}
+                  variant="outline"
+                  size="sm"
+                  className="text-gray-700"
+                >
+                  <RefreshCw className={cn(
+                    "h-4 w-4 mr-2",
+                    isLoadingSent && "animate-spin"
+                  )} />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <span className="block sm:inline">{error}</span>
               </div>
             )}
-          </CardContent>
-        </Card>
-      )}
+
+            <div className="grid gap-4">
+              {sentMessages.map((msg, index) => (
+                <Card 
+                  key={msg.id || index} 
+                  className="relative hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => handleMessageClick(msg)}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <CardTitle className="text-base">
+                          {msg.message}
+                        </CardTitle>
+                        <p className="text-sm text-gray-500">
+                          Sent: {new Date(msg.sentAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-sm font-medium">
+                          Recipients: {msg.totalRecipients}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Credits: {msg.totalCredits}
+                        </p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex gap-2">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaCheck className="w-4 h-4 mr-1 text-green-500" />
+                        {msg.status.delivered || 0} delivered
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaClock className="w-4 h-4 mr-1 text-yellow-500" />
+                        {msg.status.pending || 0} pending
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaExclamationCircle className="w-4 h-4 mr-1 text-red-500" />
+                        {msg.status.failed || 0} failed
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {hasMoreSentMessages && (
+              <div className="flex justify-center mt-4">
+                <Button
+                  onClick={() => fetchSentMessages(sentMessagesPage + 1)}
+                  disabled={isLoadingSent}
+                  variant="outline"
+                >
+                  {isLoadingSent ? (
+                    <>
+                      <FaSpinner className="animate-spin mr-2" />
+                      Loading...
+                    </>
+                  ) : (
+                    'Load More'
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {sentMessages.length === 0 && !isLoadingSent && (
+              <div className="text-center py-8 text-gray-500">
+                No sent messages found
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {selectedMessage && (
         <Dialog open={!!selectedMessage} onOpenChange={() => setSelectedMessage(null)}>
