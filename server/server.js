@@ -773,7 +773,16 @@ async function backgroundFetchInboxMessages() {
         }
       });
 
-      const messages = await response.json();
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data || !data.webServiceMessages) {
+        throw new Error('Invalid response format from API');
+      }
+
+      const messages = data.webServiceMessages;
       console.log(`Found ${messages.length} inbox messages on page ${page}`);
 
       if (messages.length === 0) {
@@ -784,8 +793,13 @@ async function backgroundFetchInboxMessages() {
       }
     }
 
+    // Sort messages by date before caching
+    const sortedMessages = {
+      webServiceMessages: allMessages.sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))
+    };
+
     // Update cache
-    inboxMessagesCache = allMessages;
+    inboxMessagesCache = sortedMessages;
     lastInboxUpdate = new Date().toISOString();
     console.log(`Background fetch complete: ${allMessages.length} inbox messages cached`);
   } catch (error) {
@@ -819,13 +833,27 @@ app.get('/inbox-messages', async (req, res) => {
           'token': process.env.ZOOM_CONNECT_KEY
         }
       });
-      messages = await response.json();
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data || !data.webServiceMessages) {
+        throw new Error('Invalid response format from API');
+      }
+      messages = data;
     }
+
+    // Sort messages by date in descending order (latest first)
+    const sortedMessages = messages.webServiceMessages.sort((a, b) => {
+      return new Date(b.dateTime) - new Date(a.dateTime);
+    });
 
     // Calculate pagination
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    const paginatedMessages = messages.webServiceMessages.slice(startIndex, endIndex);
+    const paginatedMessages = sortedMessages.slice(startIndex, endIndex);
 
     res.json({
       success: true,
@@ -833,8 +861,8 @@ app.get('/inbox-messages', async (req, res) => {
       pagination: {
         page,
         limit,
-        total: messages.webServiceMessages.length,
-        hasMore: endIndex < messages.webServiceMessages.length
+        total: sortedMessages.length,
+        hasMore: endIndex < sortedMessages.length
       },
       metadata: {
         fromCache: useCache && inboxMessagesCache.length > 0,
