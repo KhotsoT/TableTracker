@@ -105,7 +105,7 @@ function Messages() {
     }
   };
 
-  // Update fetchInboxMessages function
+  // Update fetchInboxMessages function to match sent messages behavior
   const fetchInboxMessages = async (page = 1) => {
     setIsLoadingInbox(true);
     setError(null);
@@ -153,7 +153,7 @@ function Messages() {
     }
   };
 
-  // Add refresh function for inbox
+  // Update refreshInboxMessages function to match sent messages behavior
   const refreshInboxMessages = async () => {
     try {
       setIsLoadingInbox(true);
@@ -197,10 +197,13 @@ function Messages() {
     }
   };
 
-  // Update useEffect for inbox tab
+  // Update useEffect for inbox tab to match sent messages behavior
   useEffect(() => {
     if (activeTab === 'inbox') {
-      initializeInboxCache();
+      // Only initialize cache and fetch messages if we don't have any
+      if (inboxMessages.length === 0) {
+        initializeInboxCache();
+      }
     }
   }, [activeTab]);
 
@@ -1055,7 +1058,7 @@ function Messages() {
                         onClick={() => fetchInboxMessages(inboxPage + 1)}
                         disabled={isLoadingInbox}
                         variant="outline"
-                        className="w-40"
+                        className="w-40 border-gray-300 text-gray-700 hover:bg-gray-50"
                       >
                         {isLoadingInbox ? (
                           <>
@@ -1174,7 +1177,7 @@ function Messages() {
                     onClick={() => fetchSentMessages(sentMessagesPage + 1)}
                     disabled={isLoadingSent}
                     variant="outline"
-                    className="w-40"
+                    className="w-40 border-gray-300 text-gray-700 hover:bg-gray-50"
                   >
                     {isLoadingSent ? (
                       <>
@@ -1275,7 +1278,7 @@ function Messages() {
                     </div>
                   </div>
 
-                  selectedMessage.recipients?.length > 0 && (
+                  {selectedMessage.recipients?.length > 0 ? (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-500">
                         Recipients Detail {selectedMessage.recipients.length > 20 && `(Showing first 20 of ${selectedMessage.recipients.length})`}
@@ -1295,7 +1298,7 @@ function Messages() {
                         ))}
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-500">Sent At</label>
