@@ -551,20 +551,50 @@ app.post('/api/send-message', async (req, res) => {
   }
 });
 
-// Add endpoint to fetch inbox messages
+// Add inbox background fetch endpoint
+app.post('/api/messages/inbox-background-fetch', async (req, res) => {
+  try {
+    if (isUpdatingInboxCache) {
+      return res.json({ success: true, message: 'Cache update already in progress' });
+    }
+
+    // Start background fetch
+    isUpdatingInboxCache = true;
+    backgroundFetchInboxMessages().catch(console.error);
+
+    res.json({ success: true, message: 'Started background fetch of inbox messages' });
+  } catch (error) {
+    console.error('Error starting inbox background fetch:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add inbox cache status endpoint
+app.get('/api/messages/inbox-cache-status', (req, res) => {
+  res.json({
+    success: true,
+    isUpdating: isUpdatingInboxCache,
+    lastUpdated: lastInboxUpdate,
+    totalMessages: inboxMessagesCache?.webServiceMessages?.length || 0
+  });
+});
+
+// Update inbox messages endpoint to use cache
 app.get('/api/inbox-messages', async (req, res) => {
   try {
-    let allMessages = [];
-    let currentPage = 1;
-    let hasMoreMessages = true;
-    
-    console.log('Starting to fetch inbox messages...');
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const useCache = req.query.useCache !== 'false';
 
-    // Fetch messages until we get an empty page
-    while (hasMoreMessages) {
-      console.log(`Fetching inbox page ${currentPage}...`);
-      
-      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${currentPage}&pageSize=100`, {
+    console.log('Fetching inbox messages with params:', { page, limit, useCache });
+
+    let messages = [];
+    if (useCache && inboxMessagesCache?.webServiceMessages?.length > 0) {
+      console.log('Using cached messages');
+      messages = [...inboxMessagesCache.webServiceMessages];
+    } else {
+      console.log('Fetching fresh messages from API');
+      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${page}&pageSize=100`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -574,37 +604,44 @@ app.get('/api/inbox-messages', async (req, res) => {
         }
       });
 
-      const responseText = await response.text();
-      console.log(`Page ${currentPage} response:`, responseText.substring(0, 200) + '...'); 
-
       if (!response.ok) {
-        throw new Error(`API responded with status ${response.status}: ${responseText}`);
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`API request failed with status ${response.status}`);
       }
 
-      const data = JSON.parse(responseText);
-      const messages = data.webServiceMessages || [];
-      
-      console.log(`Found ${messages.length} inbox messages on page ${currentPage}`);
-      
-      if (messages.length === 0) {
-        hasMoreMessages = false;
-        console.log('No more inbox messages found');
-      } else {
-        allMessages = [...allMessages, ...messages];
-        currentPage++;
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('Invalid Content-Type:', contentType, 'Response:', errorText);
+        throw new Error('API returned non-JSON response');
       }
 
-      // Add a small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
+      const data = await response.json();
+      if (!data || !Array.isArray(data.webServiceMessages)) {
+        console.error('Invalid API Response:', data);
+        throw new Error('Invalid response format from API');
+      }
+      messages = [...data.webServiceMessages];
     }
 
-    console.log(`Total inbox messages fetched: ${allMessages.length}`);
+    // Sort messages by date in descending order (latest first)
+    const sortedMessages = messages.sort((a, b) => {
+      const dateA = new Date(a.dateTimeReceived || a.dateTime);
+      const dateB = new Date(b.dateTimeReceived || b.dateTime);
+      return dateB - dateA;
+    });
 
-    // Format messages for the frontend
-    const formattedMessages = allMessages.map(msg => ({
+    // Calculate pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedMessages = sortedMessages.slice(startIndex, endIndex);
+
+    // Format messages for frontend
+    const formattedMessages = paginatedMessages.map(msg => ({
       messageId: msg.messageId,
       message: msg.message,
-      dateTimeReceived: msg.dateTimeReceived,
+      dateTimeReceived: msg.dateTimeReceived || msg.dateTime,
       fromNumber: msg.fromNumber,
       messageStatus: msg.messageStatus || 'received',
       creditCost: msg.creditCost || 0
@@ -612,14 +649,24 @@ app.get('/api/inbox-messages', async (req, res) => {
 
     res.json({
       success: true,
-      messages: formattedMessages
+      messages: formattedMessages,
+      pagination: {
+        page,
+        limit,
+        total: sortedMessages.length,
+        hasMore: endIndex < sortedMessages.length
+      },
+      metadata: {
+        fromCache: useCache && inboxMessagesCache?.webServiceMessages?.length > 0,
+        lastFetched: lastInboxUpdate
+      }
     });
-
   } catch (error) {
     console.error('Error fetching inbox messages:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.stack
     });
   }
 });
@@ -725,34 +772,6 @@ let inboxMessagesCache = [];
 let isUpdatingInboxCache = false;
 let lastInboxUpdate = null;
 
-// Add inbox background fetch endpoint
-app.post('/messages/inbox-background-fetch', async (req, res) => {
-  try {
-    if (isUpdatingInboxCache) {
-      return res.json({ success: true, message: 'Cache update already in progress' });
-    }
-
-    // Start background fetch
-    isUpdatingInboxCache = true;
-    backgroundFetchInboxMessages().catch(console.error);
-
-    res.json({ success: true, message: 'Started background fetch of inbox messages' });
-  } catch (error) {
-    console.error('Error starting inbox background fetch:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Add inbox cache status endpoint
-app.get('/messages/inbox-cache-status', (req, res) => {
-  res.json({
-    success: true,
-    isUpdating: isUpdatingInboxCache,
-    lastUpdated: lastInboxUpdate,
-    totalMessages: inboxMessagesCache.length
-  });
-});
-
 // Add background fetch function for inbox
 async function backgroundFetchInboxMessages() {
   console.log('Starting background fetch of inbox messages...');
@@ -828,98 +847,6 @@ async function backgroundFetchInboxMessages() {
     isUpdatingInboxCache = false;
   }
 }
-
-// Update inbox messages endpoint to use cache
-app.get('/inbox-messages', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const useCache = req.query.useCache !== 'false';
-
-    console.log('Fetching inbox messages with params:', { page, limit, useCache });
-
-    let messages = [];
-    if (useCache && inboxMessagesCache.webServiceMessages?.length > 0) {
-      console.log('Using cached messages');
-      messages = inboxMessagesCache.webServiceMessages;
-    } else {
-      console.log('Fetching fresh messages from API');
-      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${page}&pageSize=100`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'email': process.env.ZOOM_CONNECT_EMAIL,
-          'token': process.env.ZOOM_CONNECT_KEY
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error Response:', errorText);
-        throw new Error(`API request failed with status ${response.status}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const errorText = await response.text();
-        console.error('Invalid Content-Type:', contentType, 'Response:', errorText);
-        throw new Error('API returned non-JSON response');
-      }
-
-      const data = await response.json();
-      if (!data || !Array.isArray(data.webServiceMessages)) {
-        console.error('Invalid API Response:', data);
-        throw new Error('Invalid response format from API');
-      }
-      messages = data.webServiceMessages;
-    }
-
-    // Sort messages by date in descending order (latest first)
-    const sortedMessages = messages.sort((a, b) => {
-      const dateA = new Date(a.dateTimeReceived || a.dateTime);
-      const dateB = new Date(b.dateTimeReceived || b.dateTime);
-      return dateB - dateA;
-    });
-
-    // Calculate pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedMessages = sortedMessages.slice(startIndex, endIndex);
-
-    // Format messages for frontend
-    const formattedMessages = paginatedMessages.map(msg => ({
-      messageId: msg.messageId,
-      message: msg.message,
-      dateTimeReceived: msg.dateTimeReceived || msg.dateTime,
-      fromNumber: msg.fromNumber,
-      messageStatus: msg.messageStatus || 'received',
-      creditCost: msg.creditCost || 0
-    }));
-
-    res.json({
-      success: true,
-      messages: formattedMessages,
-      pagination: {
-        page,
-        limit,
-        total: sortedMessages.length,
-        hasMore: endIndex < sortedMessages.length
-      },
-      metadata: {
-        fromCache: useCache && inboxMessagesCache.webServiceMessages?.length > 0,
-        lastFetched: lastInboxUpdate
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching inbox messages:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      details: error.stack
-    });
-  }
-});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
