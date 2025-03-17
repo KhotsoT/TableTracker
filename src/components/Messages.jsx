@@ -1237,10 +1237,6 @@ function Messages() {
             <DialogHeader className="border-b pb-4 shrink-0">
               <div className="flex items-center justify-between mb-2">
                 <DialogTitle className="text-xl">Message Details</DialogTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Available Credits:</span>
-                  <span className="text-lg font-bold text-blue-600">{credits}</span>
-                </div>
               </div>
               <DialogDescription id="message-details-description">
                 {selectedMessage.sender ? 'Received message details' : 'Sent message details'}
