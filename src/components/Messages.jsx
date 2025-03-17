@@ -1086,10 +1086,10 @@ function Messages() {
         </TabsContent>
 
         <TabsContent value="sent">
-          <Card>
-            <CardHeader>
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xl font-semibold">Sent Messages</CardTitle>
+                <h2 className="text-xl font-semibold">Sent Messages</h2>
                 <div className="flex items-center gap-4">
                   {cacheStatus?.isUpdating && (
                     <div className="flex items-center text-sm text-yellow-600">
@@ -1116,88 +1116,84 @@ function Messages() {
                   </Button>
                 </div>
               </div>
-            </CardHeader>
-            <CardContent>
+            </div>
+            <div className="p-4">
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
                   <span className="block sm:inline">{error}</span>
                 </div>
               )}
 
-              <div className="grid gap-4">
+              <div className="space-y-4">
                 {sentMessages.map((msg, index) => (
-                  <Card 
+                  <div 
                     key={msg.id || index} 
-                    className="relative hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="bg-white border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
                     onClick={() => handleMessageClick(msg)}
                   >
-                    <CardHeader className="pb-2">
-                      <div className="flex justify-between items-start">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">
-                            {msg.message}
-                          </CardTitle>
-                          <p className="text-sm text-gray-500">
-                            Sent: {new Date(msg.sentAt).toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="text-right space-y-1">
-                          <p className="text-sm font-medium">
-                            Recipients: {msg.totalRecipients}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            Credits: {msg.totalCredits}
-                          </p>
-                        </div>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="space-y-1">
+                        <p className="font-medium text-gray-900">
+                          {msg.message}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Sent: {new Date(msg.sentAt).toLocaleString()}
+                        </p>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex gap-2">
-                        <div className="flex items-center text-sm text-gray-500">
-                          <FaCheck className="w-4 h-4 mr-1 text-green-500" />
-                          {msg.status.delivered || 0} delivered
-                        </div>
-                        <div className="flex items-center text-sm text-gray-500">
-                          <FaClock className="w-4 h-4 mr-1 text-yellow-500" />
-                          {msg.status.pending || 0} pending
-                        </div>
-                        <div className="flex items-center text-sm text-gray-500">
-                          <FaExclamationCircle className="w-4 h-4 mr-1 text-red-500" />
-                          {msg.status.failed || 0} failed
-                        </div>
+                      <div className="text-right space-y-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          Recipients: {msg.totalRecipients}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Credits: {msg.totalCredits}
+                        </p>
                       </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaCheck className="w-4 h-4 mr-1 text-green-500" />
+                        {msg.status.delivered || 0} delivered
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaClock className="w-4 h-4 mr-1 text-yellow-500" />
+                        {msg.status.pending || 0} pending
+                      </div>
+                      <div className="flex items-center text-sm text-gray-500">
+                        <FaExclamationCircle className="w-4 h-4 mr-1 text-red-500" />
+                        {msg.status.failed || 0} failed
+                      </div>
+                    </div>
+                  </div>
                 ))}
+
+                {hasMoreSentMessages && (
+                  <div className="flex justify-center mt-4">
+                    <Button
+                      onClick={() => fetchSentMessages(sentMessagesPage + 1)}
+                      disabled={isLoadingSent}
+                      variant="outline"
+                      className="w-40 border-gray-300 text-gray-700 hover:bg-gray-50"
+                    >
+                      {isLoadingSent ? (
+                        <>
+                          <FaSpinner className="animate-spin mr-2" />
+                          Loading...
+                        </>
+                      ) : (
+                        'Load More'
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {sentMessages.length === 0 && !isLoadingSent && (
+                  <div className="text-center py-8 text-gray-500">
+                    No sent messages found
+                  </div>
+                )}
               </div>
-
-              {hasMoreSentMessages && (
-                <div className="flex justify-center mt-4">
-                  <Button
-                    onClick={() => fetchSentMessages(sentMessagesPage + 1)}
-                    disabled={isLoadingSent}
-                    variant="outline"
-                    className="w-40 border-gray-300 text-gray-700 hover:bg-gray-50"
-                  >
-                    {isLoadingSent ? (
-                      <>
-                        <FaSpinner className="animate-spin mr-2" />
-                        Loading...
-                      </>
-                    ) : (
-                      'Load More'
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {sentMessages.length === 0 && !isLoadingSent && (
-                <div className="text-center py-8 text-gray-500">
-                  No sent messages found
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
 
