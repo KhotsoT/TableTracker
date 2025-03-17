@@ -68,25 +68,52 @@ function Messages() {
   // Add inbox cache initialization
   const initializeInboxCache = async () => {
     try {
+      setIsLoadingInbox(true);
+      setError(null);
+      
       // Start background fetch
       const response = await fetch(`${API_BASE_URL}/messages/inbox-background-fetch`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to initialize inbox cache: ${response.status}`);
+      }
+
       const data = await response.json();
       
       if (data.success) {
         // Start polling for cache status
         pollInboxCacheStatus();
+      } else {
+        throw new Error(data.error || 'Failed to initialize inbox cache');
       }
     } catch (error) {
       console.error('Error initializing inbox cache:', error);
+      setError('Failed to load inbox messages. Please try again.');
+      // Fallback to direct fetch without cache
+      fetchInboxMessages(1);
+    } finally {
+      setIsLoadingInbox(false);
     }
   };
 
-  // Add inbox cache status polling
+  // Update polling function with better error handling
   const pollInboxCacheStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/messages/inbox-cache-status`);
+      const response = await fetch(`${API_BASE_URL}/messages/inbox-cache-status`, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to check cache status: ${response.status}`);
+      }
+
       const data = await response.json();
       
       if (data.success) {
@@ -99,9 +126,13 @@ function Messages() {
           // Cache is ready, fetch messages
           fetchInboxMessages(1);
         }
+      } else {
+        throw new Error(data.error || 'Failed to check cache status');
       }
     } catch (error) {
       console.error('Error polling inbox cache status:', error);
+      // On error, try direct fetch
+      fetchInboxMessages(1);
     }
   };
 
