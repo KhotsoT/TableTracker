@@ -826,6 +826,25 @@ function Messages() {
 
   return (
     <div className="container mx-auto p-4">
+      <div className="mb-4 p-4 bg-white rounded-lg shadow-sm border flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Messages</h1>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-600">Available Credits:</span>
+            <span className="text-xl font-bold text-blue-600">{credits}</span>
+          </div>
+          <Button
+            onClick={fetchCredits}
+            variant="outline"
+            size="sm"
+            className="text-gray-700"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Credits
+          </Button>
+        </div>
+      </div>
+
       <Tabs defaultValue="new" value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="new">
@@ -1036,6 +1055,7 @@ function Messages() {
                         onClick={() => fetchInboxMessages(inboxPage + 1)}
                         disabled={isLoadingInbox}
                         variant="outline"
+                        className="w-40"
                       >
                         {isLoadingInbox ? (
                           <>
@@ -1063,119 +1083,118 @@ function Messages() {
         </TabsContent>
 
         <TabsContent value="sent">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Sent Messages</h2>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-500">Available Credits:</span>
-                  <span className="font-medium text-blue-600">{credits}</span>
-                </div>
-                {cacheStatus?.isUpdating && (
-                  <div className="flex items-center text-sm text-yellow-600">
-                    <FaSpinner className="animate-spin mr-2" />
-                    Updating cache...
-                  </div>
-                )}
-                {cacheStatus?.lastUpdated && (
-                  <span className="text-sm text-gray-500">
-                    Last updated: {new Date(cacheStatus.lastUpdated).toLocaleString()}
-                  </span>
-                )}
-                <Button
-                  onClick={refreshSentMessages}
-                  disabled={isLoadingSent}
-                  variant="outline"
-                  size="sm"
-                  className="text-gray-700"
-                >
-                  <RefreshCw className={cn(
-                    "h-4 w-4 mr-2",
-                    isLoadingSent && "animate-spin"
-                  )} />
-                  Refresh
-                </Button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-                <span className="block sm:inline">{error}</span>
-              </div>
-            )}
-
-            <div className="grid gap-4">
-              {sentMessages.map((msg, index) => (
-                <Card 
-                  key={msg.id || index} 
-                  className="relative hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => handleMessageClick(msg)}
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <CardTitle className="text-base">
-                          {msg.message}
-                        </CardTitle>
-                        <p className="text-sm text-gray-500">
-                          Sent: {new Date(msg.sentAt).toLocaleString()}
-                        </p>
-                      </div>
-                      <div className="text-right space-y-1">
-                        <p className="text-sm font-medium">
-                          Recipients: {msg.totalRecipients}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Credits: {msg.totalCredits}
-                        </p>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex gap-2">
-                      <div className="flex items-center text-sm text-gray-500">
-                        <FaCheck className="w-4 h-4 mr-1 text-green-500" />
-                        {msg.status.delivered || 0} delivered
-                      </div>
-                      <div className="flex items-center text-sm text-gray-500">
-                        <FaClock className="w-4 h-4 mr-1 text-yellow-500" />
-                        {msg.status.pending || 0} pending
-                      </div>
-                      <div className="flex items-center text-sm text-gray-500">
-                        <FaExclamationCircle className="w-4 h-4 mr-1 text-red-500" />
-                        {msg.status.failed || 0} failed
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {hasMoreSentMessages && (
-              <div className="flex justify-center mt-4">
-                <Button
-                  onClick={() => fetchSentMessages(sentMessagesPage + 1)}
-                  disabled={isLoadingSent}
-                  variant="outline"
-                >
-                  {isLoadingSent ? (
-                    <>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl font-semibold">Sent Messages</CardTitle>
+                <div className="flex items-center gap-4">
+                  {cacheStatus?.isUpdating && (
+                    <div className="flex items-center text-sm text-yellow-600">
                       <FaSpinner className="animate-spin mr-2" />
-                      Loading...
-                    </>
-                  ) : (
-                    'Load More'
+                      Updating cache...
+                    </div>
                   )}
-                </Button>
+                  {cacheStatus?.lastUpdated && (
+                    <span className="text-sm text-gray-500">
+                      Last updated: {new Date(cacheStatus.lastUpdated).toLocaleString()}
+                    </span>
+                  )}
+                  <Button
+                    onClick={refreshSentMessages}
+                    disabled={isLoadingSent}
+                    variant="outline"
+                    className="text-gray-700"
+                  >
+                    <RefreshCw className={cn(
+                      "h-4 w-4 mr-2",
+                      isLoadingSent && "animate-spin"
+                    )} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
-            )}
+            </CardHeader>
+            <CardContent>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+                  <span className="block sm:inline">{error}</span>
+                </div>
+              )}
 
-            {sentMessages.length === 0 && !isLoadingSent && (
-              <div className="text-center py-8 text-gray-500">
-                No sent messages found
+              <div className="grid gap-4">
+                {sentMessages.map((msg, index) => (
+                  <Card 
+                    key={msg.id || index} 
+                    className="relative hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => handleMessageClick(msg)}
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-1">
+                          <CardTitle className="text-base">
+                            {msg.message}
+                          </CardTitle>
+                          <p className="text-sm text-gray-500">
+                            Sent: {new Date(msg.sentAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <p className="text-sm font-medium">
+                            Recipients: {msg.totalRecipients}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Credits: {msg.totalCredits}
+                          </p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex gap-2">
+                        <div className="flex items-center text-sm text-gray-500">
+                          <FaCheck className="w-4 h-4 mr-1 text-green-500" />
+                          {msg.status.delivered || 0} delivered
+                        </div>
+                        <div className="flex items-center text-sm text-gray-500">
+                          <FaClock className="w-4 h-4 mr-1 text-yellow-500" />
+                          {msg.status.pending || 0} pending
+                        </div>
+                        <div className="flex items-center text-sm text-gray-500">
+                          <FaExclamationCircle className="w-4 h-4 mr-1 text-red-500" />
+                          {msg.status.failed || 0} failed
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-            )}
-          </div>
+
+              {hasMoreSentMessages && (
+                <div className="flex justify-center mt-4">
+                  <Button
+                    onClick={() => fetchSentMessages(sentMessagesPage + 1)}
+                    disabled={isLoadingSent}
+                    variant="outline"
+                    className="w-40"
+                  >
+                    {isLoadingSent ? (
+                      <>
+                        <FaSpinner className="animate-spin mr-2" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load More'
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {sentMessages.length === 0 && !isLoadingSent && (
+                <div className="text-center py-8 text-gray-500">
+                  No sent messages found
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -1249,6 +1268,10 @@ function Messages() {
                         <span className="text-sm text-gray-700">Pending:</span>
                         <span className="font-medium text-yellow-600">{selectedMessage.status?.pending || 0}</span>
                       </div>
+                      <div className="flex justify-between items-center border-t pt-2 mt-2">
+                        <span className="text-sm font-medium text-gray-700">Credits Used:</span>
+                        <span className="font-medium text-blue-600">{selectedMessage.totalCredits || Math.ceil(selectedMessage.message.length / 160)}</span>
+                      </div>
                     </div>
                   </div>
 
@@ -1278,13 +1301,6 @@ function Messages() {
                     <label className="text-sm font-medium text-gray-500">Sent At</label>
                     <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
                       {new Date(selectedMessage.sentAt).toLocaleString()}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-500">Credits Used</label>
-                    <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
-                      {selectedMessage.totalCredits || 1}
                     </div>
                   </div>
                 </>
