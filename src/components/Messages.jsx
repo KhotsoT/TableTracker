@@ -54,6 +54,9 @@ function Messages() {
   const [hasMoreSentMessages, setHasMoreSentMessages] = useState(true);
   const [dateFilter, setDateFilter] = useState({ startDate: '', endDate: '' });
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [inboxCacheStatus, setInboxCacheStatus] = useState(null);
+  const [hasMoreInboxMessages, setHasMoreInboxMessages] = useState(true);
+  const [inboxPage, setInboxPage] = useState(1);
   const MESSAGES_PER_PAGE = 10;
 
   const ZOOM_CONNECT_KEY = import.meta.env.VITE_ZOOM_CONNECT_KEY;
@@ -61,6 +64,145 @@ function Messages() {
   // Add new state variables for cache handling
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [cacheStatus, setCacheStatus] = useState(null);
+
+  // Add inbox cache initialization
+  const initializeInboxCache = async () => {
+    try {
+      // Start background fetch
+      const response = await fetch(`${API_BASE_URL}/messages/inbox-background-fetch`, {
+        method: 'POST'
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        // Start polling for cache status
+        pollInboxCacheStatus();
+      }
+    } catch (error) {
+      console.error('Error initializing inbox cache:', error);
+    }
+  };
+
+  // Add inbox cache status polling
+  const pollInboxCacheStatus = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/messages/inbox-cache-status`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setInboxCacheStatus(data);
+        
+        // If still updating, poll again in 5 seconds
+        if (data.isUpdating) {
+          setTimeout(pollInboxCacheStatus, 5000);
+        } else {
+          // Cache is ready, fetch messages
+          fetchInboxMessages(1);
+        }
+      }
+    } catch (error) {
+      console.error('Error polling inbox cache status:', error);
+    }
+  };
+
+  // Update fetchInboxMessages function
+  const fetchInboxMessages = async (page = 1) => {
+    setIsLoadingInbox(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('limit', MESSAGES_PER_PAGE);
+      params.append('useCache', 'true');
+
+      const response = await fetch(`${API_BASE_URL}/inbox-messages?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch inbox messages: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch inbox messages');
+      }
+
+      // If it's the first page, replace messages
+      // Otherwise append to existing messages
+      if (page === 1) {
+        setInboxMessages(data.messages);
+      } else {
+        setInboxMessages(prev => [...prev, ...data.messages]);
+      }
+
+      // Update pagination state
+      setHasMoreInboxMessages(data.pagination.hasMore);
+      setInboxPage(page);
+
+      // Update cache status if provided
+      if (data.metadata) {
+        setInboxCacheStatus(prev => ({
+          ...prev,
+          lastUpdated: data.metadata.lastFetched,
+          fromCache: data.metadata.fromCache
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching inbox messages:', error);
+      setError(error.message);
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  };
+
+  // Add refresh function for inbox
+  const refreshInboxMessages = async () => {
+    try {
+      setIsLoadingInbox(true);
+      
+      // First, start a new background fetch
+      await fetch(`${API_BASE_URL}/messages/inbox-background-fetch`, {
+        method: 'POST'
+      });
+      
+      // Then fetch messages without cache
+      const params = new URLSearchParams();
+      params.append('page', 1);
+      params.append('limit', MESSAGES_PER_PAGE);
+      params.append('useCache', 'false');
+      
+      const response = await fetch(`${API_BASE_URL}/inbox-messages?${params.toString()}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setInboxMessages(data.messages);
+        setHasMoreInboxMessages(data.pagination.hasMore);
+        setInboxPage(1);
+        
+        // Start polling cache status again
+        pollInboxCacheStatus();
+        
+        toast({
+          title: "Messages Refreshed",
+          description: "Successfully fetched latest messages from server.",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing inbox messages:', error);
+      toast({
+        title: "Refresh Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  };
+
+  // Update useEffect for inbox tab
+  useEffect(() => {
+    if (activeTab === 'inbox') {
+      initializeInboxCache();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     initializeCache();
@@ -465,48 +607,6 @@ function Messages() {
     }
   };
 
-  const fetchInboxMessages = async () => {
-    setIsLoadingInbox(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE_URL}/inbox-messages`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch inbox messages: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to fetch inbox messages');
-      }
-
-      // Format inbox messages to match the structure we need
-      const formattedMessages = data.messages.map(msg => ({
-        id: msg.messageId,
-        message: msg.message,
-        receivedAt: msg.dateTimeReceived,
-        sender: msg.fromNumber,
-        status: msg.messageStatus?.toLowerCase() || 'received',
-        recipients: [{
-          number: msg.fromNumber,
-          status: 'received'
-        }]
-      }));
-
-      setInboxMessages(formattedMessages);
-    } catch (error) {
-      console.error('Error fetching inbox messages:', error);
-      setError(error.message);
-    } finally {
-      setIsLoadingInbox(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'inbox') {
-      fetchInboxMessages();
-    }
-  }, [activeTab]);
-
   const fetchCredits = async () => {
     try {
       setError(null);
@@ -864,14 +964,31 @@ function Messages() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
-                <Button 
-                  onClick={fetchInboxMessages}
-                  variant="outline"
-                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                  disabled={isLoadingInbox}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isLoadingInbox ? 'animate-spin' : ''}`} />
-                </Button>
+                <div className="flex items-center gap-4">
+                  {inboxCacheStatus?.isUpdating && (
+                    <div className="flex items-center text-sm text-yellow-600">
+                      <FaSpinner className="animate-spin mr-2" />
+                      Updating cache...
+                    </div>
+                  )}
+                  {inboxCacheStatus?.lastUpdated && (
+                    <span className="text-sm text-gray-500">
+                      Last updated: {new Date(inboxCacheStatus.lastUpdated).toLocaleString()}
+                    </span>
+                  )}
+                  <Button 
+                    onClick={refreshInboxMessages}
+                    disabled={isLoadingInbox}
+                    variant="outline"
+                    className="text-gray-700"
+                  >
+                    <RefreshCw className={cn(
+                      "h-4 w-4 mr-2",
+                      isLoadingInbox && "animate-spin"
+                    )} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -882,13 +999,13 @@ function Messages() {
                 </div>
               )}
               
-              {isLoadingInbox ? (
+              {isLoadingInbox && inboxMessages.length === 0 ? (
                 <div className="flex items-center justify-center py-8">
                   <FaSpinner className="w-6 h-6 animate-spin text-blue-600" />
                 </div>
               ) : inboxMessages.length > 0 ? (
                 <div className="space-y-4">
-                  {inboxMessages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt)).map((msg) => (
+                  {inboxMessages.map((msg) => (
                     <Card 
                       key={msg.id || msg.receivedAt} 
                       className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -897,7 +1014,7 @@ function Messages() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-900">
-                            From: {msg.sender}
+                            From: {msg.fromNumber}
                           </span>
                           <span className={`px-2 py-0.5 text-xs rounded-full ${
                             msg.status === 'received' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
@@ -906,12 +1023,31 @@ function Messages() {
                           </span>
                         </div>
                         <span className="text-sm text-gray-500">
-                          {new Date(msg.receivedAt).toLocaleString()}
+                          {new Date(msg.dateTimeReceived).toLocaleString()}
                         </span>
                       </div>
                       <p className="text-sm text-gray-600">{msg.message}</p>
                     </Card>
                   ))}
+
+                  {hasMoreInboxMessages && (
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        onClick={() => fetchInboxMessages(inboxPage + 1)}
+                        disabled={isLoadingInbox}
+                        variant="outline"
+                      >
+                        {isLoadingInbox ? (
+                          <>
+                            <FaSpinner className="animate-spin mr-2" />
+                            Loading...
+                          </>
+                        ) : (
+                          'Load More'
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-8">
@@ -931,6 +1067,10 @@ function Messages() {
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Sent Messages</h2>
               <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500">Available Credits:</span>
+                  <span className="font-medium text-blue-600">{credits}</span>
+                </div>
                 {cacheStatus?.isUpdating && (
                   <div className="flex items-center text-sm text-yellow-600">
                     <FaSpinner className="animate-spin mr-2" />
@@ -1112,7 +1252,7 @@ function Messages() {
                     </div>
                   </div>
 
-                  {selectedMessage.recipients?.length > 0 && (
+                  selectedMessage.recipients?.length > 0 && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-gray-500">
                         Recipients Detail {selectedMessage.recipients.length > 20 && `(Showing first 20 of ${selectedMessage.recipients.length})`}

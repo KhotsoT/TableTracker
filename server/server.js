@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createRequire } from 'module';
+import axios from 'axios';
 
 const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
@@ -717,6 +718,133 @@ app.get('/api/messages/cache-status', (req, res) => {
     lastUpdated: messageCache.lastUpdated,
     totalMessages: messageCache.messages.length
   });
+});
+
+// Add inbox cache
+let inboxMessagesCache = [];
+let isUpdatingInboxCache = false;
+let lastInboxUpdate = null;
+
+// Add inbox background fetch endpoint
+app.post('/messages/inbox-background-fetch', async (req, res) => {
+  try {
+    if (isUpdatingInboxCache) {
+      return res.json({ success: true, message: 'Cache update already in progress' });
+    }
+
+    // Start background fetch
+    isUpdatingInboxCache = true;
+    backgroundFetchInboxMessages().catch(console.error);
+
+    res.json({ success: true, message: 'Started background fetch of inbox messages' });
+  } catch (error) {
+    console.error('Error starting inbox background fetch:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add inbox cache status endpoint
+app.get('/messages/inbox-cache-status', (req, res) => {
+  res.json({
+    success: true,
+    isUpdating: isUpdatingInboxCache,
+    lastUpdated: lastInboxUpdate,
+    totalMessages: inboxMessagesCache.length
+  });
+});
+
+// Add background fetch function for inbox
+async function backgroundFetchInboxMessages() {
+  console.log('Starting background fetch of inbox messages...');
+  const allMessages = [];
+  let page = 1;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      console.log(`Fetching inbox page ${page}...`);
+      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${page}&pageSize=100`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        }
+      });
+
+      const messages = await response.json();
+      console.log(`Found ${messages.length} inbox messages on page ${page}`);
+
+      if (messages.length === 0) {
+        hasMore = false;
+      } else {
+        allMessages.push(...messages);
+        page++;
+      }
+    }
+
+    // Update cache
+    inboxMessagesCache = allMessages;
+    lastInboxUpdate = new Date().toISOString();
+    console.log(`Background fetch complete: ${allMessages.length} inbox messages cached`);
+  } catch (error) {
+    console.error('Error in background fetch:', error);
+  } finally {
+    isUpdatingInboxCache = false;
+  }
+}
+
+// Update inbox messages endpoint to use cache
+app.get('/inbox-messages', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const useCache = req.query.useCache !== 'false';
+
+    console.log('Fetching inbox messages with params:', { page, limit, useCache });
+
+    let messages;
+    if (useCache && inboxMessagesCache.length > 0) {
+      console.log('Using cached messages');
+      messages = inboxMessagesCache;
+    } else {
+      console.log('Fetching fresh messages from API');
+      const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${page}&pageSize=100`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'email': process.env.ZOOM_CONNECT_EMAIL,
+          'token': process.env.ZOOM_CONNECT_KEY
+        }
+      });
+      messages = await response.json();
+    }
+
+    // Calculate pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedMessages = messages.webServiceMessages.slice(startIndex, endIndex);
+
+    res.json({
+      success: true,
+      messages: paginatedMessages,
+      pagination: {
+        page,
+        limit,
+        total: messages.webServiceMessages.length,
+        hasMore: endIndex < messages.webServiceMessages.length
+      },
+      metadata: {
+        fromCache: useCache && inboxMessagesCache.length > 0,
+        lastFetched: lastInboxUpdate
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching inbox messages:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3001;
