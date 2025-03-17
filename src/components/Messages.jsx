@@ -829,23 +829,23 @@ function Messages() {
 
   return (
     <div className="container mx-auto p-4">
-      <div className="mb-4 p-4 bg-white rounded-lg shadow-sm border flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Messages</h1>
+      <div className="mb-4 p-4 bg-white rounded-lg shadow flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Messages</h1>
+          <div className="flex items-center gap-2 ml-8">
             <span className="text-gray-600">Available Credits:</span>
             <span className="text-xl font-bold text-blue-600">{credits}</span>
           </div>
-          <Button
-            onClick={fetchCredits}
-            variant="outline"
-            size="sm"
-            className="text-gray-700"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh Credits
-          </Button>
         </div>
+        <Button
+          onClick={fetchCredits}
+          variant="outline"
+          size="sm"
+          className="text-gray-700"
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh Credits
+        </Button>
       </div>
 
       <Tabs defaultValue="new" value={activeTab} onValueChange={setActiveTab}>
