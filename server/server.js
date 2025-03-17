@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
-import admin from 'firebase-admin';
+// import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -16,6 +16,7 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '.env') });
 
 // Initialize Firebase Admin SDK
+/*
 let serviceAccount;
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -36,6 +37,7 @@ try {
   console.error('Error initializing Firebase Admin:', error);
   process.exit(1);
 }
+*/
 
 const app = express();
 app.use(cors({
@@ -49,6 +51,11 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Cache variables for inbox messages
+let inboxMessagesCache = [];
+let isUpdatingInboxCache = false;
+let lastInboxUpdate = null;
 
 // Validate environment variables
 const requiredEnvVars = ['ZOOM_CONNECT_KEY', 'ZOOM_CONNECT_EMAIL'];
@@ -766,11 +773,6 @@ app.get('/api/messages/cache-status', (req, res) => {
     totalMessages: messageCache.messages.length
   });
 });
-
-// Add inbox cache
-let inboxMessagesCache = [];
-let isUpdatingInboxCache = false;
-let lastInboxUpdate = null;
 
 // Add background fetch function for inbox
 async function backgroundFetchInboxMessages() {

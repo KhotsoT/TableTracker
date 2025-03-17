@@ -72,7 +72,7 @@ function Messages() {
       setError(null);
       
       // Start background fetch
-      const response = await fetch(`${API_BASE_URL}/api/messages/inbox-background-fetch`, {
+      const response = await fetch(`${API_BASE_URL}/messages/inbox-background-fetch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -104,7 +104,7 @@ function Messages() {
   // Update polling function with better error handling
   const pollInboxCacheStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/messages/inbox-cache-status`, {
+      const response = await fetch(`${API_BASE_URL}/messages/inbox-cache-status`, {
         headers: {
           'Content-Type': 'application/json'
         }
@@ -146,7 +146,7 @@ function Messages() {
       params.append('limit', MESSAGES_PER_PAGE);
       params.append('useCache', 'true');
 
-      const response = await fetch(`${API_BASE_URL}/api/inbox-messages?${params.toString()}`);
+      const response = await fetch(`${API_BASE_URL}/inbox-messages?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch inbox messages: ${response.status}`);
       }
@@ -190,7 +190,7 @@ function Messages() {
       setIsLoadingInbox(true);
       
       // First, start a new background fetch
-      await fetch(`${API_BASE_URL}/api/messages/inbox-background-fetch`, {
+      await fetch(`${API_BASE_URL}/messages/inbox-background-fetch`, {
         method: 'POST'
       });
       
@@ -200,7 +200,7 @@ function Messages() {
       params.append('limit', MESSAGES_PER_PAGE);
       params.append('useCache', 'false');
       
-      const response = await fetch(`${API_BASE_URL}/api/inbox-messages?${params.toString()}`);
+      const response = await fetch(`${API_BASE_URL}/inbox-messages?${params.toString()}`);
       const data = await response.json();
       
       if (data.success) {
