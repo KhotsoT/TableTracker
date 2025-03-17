@@ -774,11 +774,21 @@ async function backgroundFetchInboxMessages() {
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`API Error Response (Page ${page}):`, errorText);
         throw new Error(`API request failed with status ${response.status}`);
       }
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('Invalid Content-Type:', contentType, 'Response:', errorText);
+        throw new Error('API returned non-JSON response');
+      }
+
       const data = await response.json();
-      if (!data || !data.webServiceMessages) {
+      if (!data || !Array.isArray(data.webServiceMessages)) {
+        console.error('Invalid API Response:', data);
         throw new Error('Invalid response format from API');
       }
 
@@ -791,19 +801,29 @@ async function backgroundFetchInboxMessages() {
         allMessages.push(...messages);
         page++;
       }
+
+      // Add a small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     // Sort messages by date before caching
-    const sortedMessages = {
-      webServiceMessages: allMessages.sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime))
-    };
+    const sortedMessages = allMessages.sort((a, b) => {
+      const dateA = new Date(a.dateTimeReceived || a.dateTime);
+      const dateB = new Date(b.dateTimeReceived || b.dateTime);
+      return dateB - dateA;
+    });
 
-    // Update cache
-    inboxMessagesCache = sortedMessages;
+    // Update cache with proper structure
+    inboxMessagesCache = {
+      webServiceMessages: sortedMessages
+    };
     lastInboxUpdate = new Date().toISOString();
     console.log(`Background fetch complete: ${allMessages.length} inbox messages cached`);
   } catch (error) {
     console.error('Error in background fetch:', error);
+    // Reset cache status on error
+    isUpdatingInboxCache = false;
+    throw error;
   } finally {
     isUpdatingInboxCache = false;
   }
@@ -818,10 +838,10 @@ app.get('/inbox-messages', async (req, res) => {
 
     console.log('Fetching inbox messages with params:', { page, limit, useCache });
 
-    let messages;
-    if (useCache && inboxMessagesCache.length > 0) {
+    let messages = [];
+    if (useCache && inboxMessagesCache.webServiceMessages?.length > 0) {
       console.log('Using cached messages');
-      messages = inboxMessagesCache;
+      messages = inboxMessagesCache.webServiceMessages;
     } else {
       console.log('Fetching fresh messages from API');
       const response = await fetch(`https://www.zoomconnect.com/app/api/rest/v1/messages/all?type=INBOUND&page=${page}&pageSize=100`, {
@@ -835,19 +855,31 @@ app.get('/inbox-messages', async (req, res) => {
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
         throw new Error(`API request failed with status ${response.status}`);
       }
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('Invalid Content-Type:', contentType, 'Response:', errorText);
+        throw new Error('API returned non-JSON response');
+      }
+
       const data = await response.json();
-      if (!data || !data.webServiceMessages) {
+      if (!data || !Array.isArray(data.webServiceMessages)) {
+        console.error('Invalid API Response:', data);
         throw new Error('Invalid response format from API');
       }
-      messages = data;
+      messages = data.webServiceMessages;
     }
 
     // Sort messages by date in descending order (latest first)
-    const sortedMessages = messages.webServiceMessages.sort((a, b) => {
-      return new Date(b.dateTime) - new Date(a.dateTime);
+    const sortedMessages = messages.sort((a, b) => {
+      const dateA = new Date(a.dateTimeReceived || a.dateTime);
+      const dateB = new Date(b.dateTimeReceived || b.dateTime);
+      return dateB - dateA;
     });
 
     // Calculate pagination
@@ -855,9 +887,19 @@ app.get('/inbox-messages', async (req, res) => {
     const endIndex = startIndex + limit;
     const paginatedMessages = sortedMessages.slice(startIndex, endIndex);
 
+    // Format messages for frontend
+    const formattedMessages = paginatedMessages.map(msg => ({
+      messageId: msg.messageId,
+      message: msg.message,
+      dateTimeReceived: msg.dateTimeReceived || msg.dateTime,
+      fromNumber: msg.fromNumber,
+      messageStatus: msg.messageStatus || 'received',
+      creditCost: msg.creditCost || 0
+    }));
+
     res.json({
       success: true,
-      messages: paginatedMessages,
+      messages: formattedMessages,
       pagination: {
         page,
         limit,
@@ -865,13 +907,17 @@ app.get('/inbox-messages', async (req, res) => {
         hasMore: endIndex < sortedMessages.length
       },
       metadata: {
-        fromCache: useCache && inboxMessagesCache.length > 0,
+        fromCache: useCache && inboxMessagesCache.webServiceMessages?.length > 0,
         lastFetched: lastInboxUpdate
       }
     });
   } catch (error) {
     console.error('Error fetching inbox messages:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.stack
+    });
   }
 });
 
