@@ -693,9 +693,12 @@ function Contacts() {
       
       await batch.commit();
       
-      // Update local state
-      setContacts(prev => prev.filter(c => c.grade !== grade));
+      // Reset grade filter to 'all' and refresh contacts
+      setSelectedGrade('all');
       setDeleteAllDialog({ open: false, grade: null });
+      
+      // Refresh contacts list to show all grades
+      await fetchContacts();
       
       toast({
         title: "Contacts Deleted",
