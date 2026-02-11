@@ -470,7 +470,7 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="bg-gray-100">
       {/* Top Stats Bar */}
       <div className="bg-white border-b">
         <div className="min-h-[5rem] flex items-center px-4 sm:px-8 py-4 w-full">

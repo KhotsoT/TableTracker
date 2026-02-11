@@ -51,9 +51,9 @@ function App() {
     <>
       <Toaster />
       <Router>
-        <div className="flex h-screen bg-gray-100">
+        <div className="flex min-h-screen bg-gray-100 overflow-x-hidden">
           {isAuthenticated && <Sidebar onLogout={handleLogout} />}
-          <main className={`flex-1 overflow-y-auto ${isAuthenticated ? 'ml-64' : ''} w-full`}>
+          <main className={`flex-1 ${isAuthenticated ? 'ml-64' : ''} w-full`}>
             <Routes>
               <Route path="/login" element={
                 !isAuthenticated ? <Login /> : <Navigate to="/dashboard" replace />
