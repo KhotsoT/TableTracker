@@ -179,16 +179,21 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener
+        // Real-time alerts listener - only show alerts from the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
         const alertsQuery = query(
           alertsRef, 
           where('type', '==', 'sms'),
+          where('createdAt', '>=', thirtyDaysAgo),
           orderBy('createdAt', 'desc'), 
-          limit(10)  // Fetch more than 5 to ensure we have enough unique messages
+          limit(20)  // Fetch more to ensure we have enough unique messages after filtering
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
+            console.log('Date filter: showing alerts from last 30 days (since:', thirtyDaysAgo.toISOString(), ')');
             
             // Create a Map to store unique messages by their content
             const uniqueMessages = new Map();
@@ -217,6 +222,20 @@ function Dashboard() {
                     if (isNaN(createdAtDate.getTime())) {
                       console.warn('Invalid createdAt date for alert:', doc.id, data.createdAt);
                       createdAtDate = new Date(); // Use current time as fallback
+                    } else {
+                      // Double-check the date is within the last 30 days
+                      const now = new Date();
+                      const daysDiff = (now - createdAtDate) / (1000 * 60 * 60 * 24);
+                      if (daysDiff > 30 || daysDiff < 0) {
+                        console.warn('Alert date outside 30-day window:', {
+                          alertId: doc.id,
+                          createdAt: createdAtDate.toISOString(),
+                          daysAgo: daysDiff,
+                          message: data.message?.substring(0, 50)
+                        });
+                        // Skip this alert if it's too old or in the future
+                        return;
+                      }
                     }
                   } else {
                     createdAtDate = new Date();
@@ -242,7 +261,8 @@ function Dashboard() {
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, 5);
             
-            console.log('Processed unique SMS activity:', activity);
+            console.log('Processed unique SMS activity:', activity.length, 'activities');
+            console.log('Activity dates:', activity.map(a => ({ time: a.time, createdAt: a.createdAt.toISOString() })));
             setRecentActivity(activity);
           } catch (error) {
             console.error('Error processing activity:', error);
@@ -250,7 +270,12 @@ function Dashboard() {
           }
         }, (error) => {
           console.error('Activity listener error:', error);
-          setError('Error in activity listener: ' + error.message);
+          // If the error is about missing index, provide helpful message
+          if (error.message && error.message.includes('index')) {
+            setError('Firestore index required. Please create a composite index for alerts collection.');
+          } else {
+            setError('Error in activity listener: ' + error.message);
+          }
         });
 
         // Fetch SMS balance
