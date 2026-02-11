@@ -179,35 +179,16 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener - only show alerts from the last 30 days
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        // Try query with date filter first, fallback to simple query if index missing
-        let alertsQuery;
-        try {
-          alertsQuery = query(
-            alertsRef, 
-            where('type', '==', 'sms'),
-            where('createdAt', '>=', thirtyDaysAgo),
-            orderBy('createdAt', 'desc'), 
-            limit(20)
-          );
-        } catch (error) {
-          console.warn('Failed to create filtered query, using simple query:', error);
-          // Fallback to simple query without date filter
-          alertsQuery = query(
-            alertsRef, 
-            where('type', '==', 'sms'),
-            orderBy('createdAt', 'desc'), 
-            limit(20)
-          );
-        }
-        
+        // Real-time alerts listener
+        const alertsQuery = query(
+          alertsRef, 
+          where('type', '==', 'sms'),
+          orderBy('createdAt', 'desc'), 
+          limit(10)  // Fetch more than 5 to ensure we have enough unique messages
+        );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
-            console.log('Date filter: showing alerts from last 30 days (since:', thirtyDaysAgo.toISOString(), ')');
             
             // Create a Map to store unique messages by their content
             const uniqueMessages = new Map();
@@ -218,63 +199,13 @@ function Dashboard() {
               const messageKey = data.message || '';
               
               if (!uniqueMessages.has(messageKey)) {
-                // Parse the createdAt date properly
-                let createdAtDate;
-                try {
-                  if (data.createdAt) {
-                    // Handle Firestore Timestamp
-                    if (data.createdAt.toDate) {
-                      createdAtDate = data.createdAt.toDate();
-                    } else if (data.createdAt instanceof Date) {
-                      createdAtDate = data.createdAt;
-                    } else {
-                      // Try parsing as string or number
-                      createdAtDate = new Date(data.createdAt);
-                    }
-                    
-                    // Validate the date
-                    if (isNaN(createdAtDate.getTime())) {
-                      console.warn('Invalid createdAt date for alert:', doc.id, data.createdAt);
-                      createdAtDate = new Date(); // Use current time as fallback
-                    } else {
-                      // Double-check the date is within the last 30 days (client-side filter if query didn't filter)
-                      const now = new Date();
-                      const daysDiff = (now - createdAtDate) / (1000 * 60 * 60 * 24);
-                      if (daysDiff > 30) {
-                        console.warn('Alert date outside 30-day window (skipping):', {
-                          alertId: doc.id,
-                          createdAt: createdAtDate.toISOString(),
-                          daysAgo: daysDiff.toFixed(1),
-                          message: data.message?.substring(0, 50)
-                        });
-                        // Skip this alert if it's too old
-                        return;
-                      }
-                      // Allow future dates (within 1 day) in case of clock skew
-                      if (daysDiff < -1) {
-                        console.warn('Alert date appears to be more than 1 day in the future:', {
-                          alertId: doc.id,
-                          createdAt: createdAtDate.toISOString(),
-                          daysAgo: daysDiff.toFixed(1)
-                        });
-                        // Still include it but log the warning
-                      }
-                    }
-                  } else {
-                    createdAtDate = new Date();
-                  }
-                } catch (error) {
-                  console.error('Error parsing createdAt date:', error);
-                  createdAtDate = new Date();
-                }
-                
                 uniqueMessages.set(messageKey, {
                   id: doc.id,
                   type: 'sms',
                   message: data.message || '',
                   recipients: data.recipients_count || 1,
-                  time: formatTime(createdAtDate),
-                  createdAt: createdAtDate
+                  time: formatTime(data.createdAt?.toDate()),
+                  createdAt: data.createdAt?.toDate() || new Date()
                 });
               }
             });
@@ -284,8 +215,7 @@ function Dashboard() {
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, 5);
             
-            console.log('Processed unique SMS activity:', activity.length, 'activities');
-            console.log('Activity dates:', activity.map(a => ({ time: a.time, createdAt: a.createdAt.toISOString() })));
+            console.log('Processed unique SMS activity:', activity);
             setRecentActivity(activity);
           } catch (error) {
             console.error('Error processing activity:', error);
@@ -293,12 +223,7 @@ function Dashboard() {
           }
         }, (error) => {
           console.error('Activity listener error:', error);
-          // If the error is about missing index, provide helpful message
-          if (error.message && error.message.includes('index')) {
-            setError('Firestore index required. Please create a composite index for alerts collection.');
-          } else {
-            setError('Error in activity listener: ' + error.message);
-          }
+          setError('Error in activity listener: ' + error.message);
         });
 
         // Fetch SMS balance
@@ -336,45 +261,11 @@ function Dashboard() {
 
   const formatTime = (date) => {
     if (!date) return 'Unknown'
-    
-    try {
-      // Ensure date is a Date object
-      const dateObj = date instanceof Date ? date : new Date(date);
-      
-      // Validate date
-      if (isNaN(dateObj.getTime())) {
-        console.warn('Invalid date passed to formatTime:', date);
-        return 'Invalid date';
-      }
-      
-      const now = new Date();
-      const diffMs = now - dateObj;
-      const minutes = Math.floor(diffMs / 60000);
-      const hours = Math.floor(minutes / 60);
-      const days = Math.floor(hours / 24);
-      
-      // If date is in the future (more than 1 minute), something is wrong
-      if (diffMs < -60000) {
-        console.warn('Date appears to be in the future:', dateObj, 'Current time:', now);
-        return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      }
-      
-      if (minutes < 1) return 'Just now'
-      if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
-      if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
-      if (days === 1) return 'Yesterday'
-      if (days < 7) return `${days} days ago`
-      if (days < 30) {
-        const weeks = Math.floor(days / 7);
-        return `${weeks} week${weeks !== 1 ? 's' : ''} ago`
-      }
-      
-      // For older dates, show formatted date
-      return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    } catch (error) {
-      console.error('Error formatting time:', error);
-      return 'Date error';
-    }
+    const minutes = Math.floor((new Date() - date) / 60000)
+    if (minutes < 60) return `${minutes} minutes ago`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} hours ago`
+    return date.toLocaleDateString()
   }
 
   const initializeSchool = async () => {

@@ -493,20 +493,14 @@ function Messages() {
       console.log('SMS sent successfully:', result);
       
       // Create alert document for the sent SMS
-      try {
-        const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
-        const alertDoc = await addDoc(alertsRef, {
-          type: 'sms',
-          message: message,
-          recipients_count: previewRecipients.length,
-          createdAt: serverTimestamp(),
-          status: 'sent'
-        });
-        console.log('Alert created successfully:', alertDoc.id);
-      } catch (error) {
-        console.error('Failed to create alert:', error);
-        // Don't fail the entire send operation if alert creation fails
-      }
+      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+      await addDoc(alertsRef, {
+        type: 'sms',
+        message: message,
+        recipients_count: previewRecipients.length,
+        createdAt: serverTimestamp(),
+        status: 'sent'
+      });
       
       // Refresh credits after sending messages
       await fetchCredits();
