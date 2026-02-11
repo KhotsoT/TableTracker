@@ -179,44 +179,58 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener
+        // Real-time alerts listener - show both SMS and contact activities
         const alertsQuery = query(
           alertsRef, 
-          where('type', '==', 'sms'),
           orderBy('createdAt', 'desc'), 
-          limit(10)  // Fetch more than 5 to ensure we have enough unique messages
+          limit(20)  // Fetch more to ensure we have enough activities
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
-            console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
+            console.log('Received activity update:', snapshot.docs.length, 'activities');
             
-            // Create a Map to store unique messages by their content
-            const uniqueMessages = new Map();
+            const activities = [];
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
-              // Use message content as the key to group identical messages
-              const messageKey = data.message || '';
+              const createdAt = data.createdAt?.toDate() || new Date();
               
-              if (!uniqueMessages.has(messageKey)) {
-                uniqueMessages.set(messageKey, {
+              if (data.type === 'sms') {
+                // For SMS, use message content as key to group identical messages
+                const messageKey = data.message || '';
+                const existingActivity = activities.find(a => a.type === 'sms' && a.message === messageKey);
+                
+                if (!existingActivity) {
+                  activities.push({
+                    id: doc.id,
+                    type: 'sms',
+                    message: data.message || '',
+                    recipients: data.recipients_count || 1,
+                    time: formatTime(createdAt),
+                    createdAt: createdAt
+                  });
+                }
+              } else if (data.type === 'contacts') {
+                // For contact activities, show all of them
+                activities.push({
                   id: doc.id,
-                  type: 'sms',
+                  type: 'contacts',
                   message: data.message || '',
-                  recipients: data.recipients_count || 1,
-                  time: formatTime(data.createdAt?.toDate()),
-                  createdAt: data.createdAt?.toDate() || new Date()
+                  action: data.action || 'unknown',
+                  count: data.count || 0,
+                  time: formatTime(createdAt),
+                  createdAt: createdAt
                 });
               }
             });
             
-            // Convert Map to array and take the last 5 unique messages
-            const activity = Array.from(uniqueMessages.values())
+            // Sort by date and take the most recent 5
+            const sortedActivities = activities
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, 5);
             
-            console.log('Processed unique SMS activity:', activity);
-            setRecentActivity(activity);
+            console.log('Processed activities:', sortedActivities.length, 'activities');
+            setRecentActivity(sortedActivities);
           } catch (error) {
             console.error('Error processing activity:', error);
             setError('Error loading recent activity: ' + error.message);
@@ -555,9 +569,16 @@ function Dashboard() {
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
                     <div>
                       <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 sm:line-clamp-none">{activity.message}</p>
-                      <p className="text-sm text-gray-500 mt-2">
-                        Sent to {activity.recipients} recipient{activity.recipients !== 1 ? 's' : ''}
-                      </p>
+                      {activity.type === 'sms' && (
+                        <p className="text-sm text-gray-500 mt-2">
+                          Sent to {activity.recipients} recipient{activity.recipients !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                      {activity.type === 'contacts' && activity.count > 0 && (
+                        <p className="text-sm text-gray-500 mt-2">
+                          {activity.count} contact{activity.count !== 1 ? 's' : ''} {activity.action === 'import' ? 'imported' : activity.action === 'update' ? 'updated' : 'deleted'}
+                        </p>
+                      )}
                     </div>
                     <span className="text-xs text-gray-500 whitespace-nowrap mt-2 sm:mt-0 sm:ml-4">{activity.time}</span>
                   </div>

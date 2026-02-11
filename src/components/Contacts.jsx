@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { Upload, Download, FileSpreadsheet, Trash2, AlertCircle, X, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
 import { db, SCHOOL_ID } from '../config/firebase'
-import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc, updateDoc } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, query, where, doc, writeBatch, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
 import { 
@@ -234,6 +234,23 @@ function Contacts() {
       // Only commit if we have successful contacts
       if (successfulContacts.length > 0) {
         await batch.commit();
+        
+        // Create alert for contact import
+        try {
+          const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+          await addDoc(alertsRef, {
+            type: 'contacts',
+            action: 'import',
+            message: `Imported ${successfulContacts.length} contact${successfulContacts.length !== 1 ? 's' : ''}`,
+            count: successfulContacts.length,
+            duplicates: duplicates.length,
+            createdAt: serverTimestamp(),
+            status: 'success'
+          });
+        } catch (error) {
+          console.error('Failed to create contact import alert:', error);
+          // Don't fail the import if alert creation fails
+        }
       }
 
       // Set import results with duplicates count
@@ -643,6 +660,22 @@ function Contacts() {
         updatedAt: new Date()
       });
 
+      // Create alert for contact update
+      try {
+        const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+        await addDoc(alertsRef, {
+          type: 'contacts',
+          action: 'update',
+          message: `Updated contact: ${updatedContact.learner_name}`,
+          contactId: updatedContact.id,
+          createdAt: serverTimestamp(),
+          status: 'success'
+        });
+      } catch (error) {
+        console.error('Failed to create contact update alert:', error);
+        // Don't fail the update if alert creation fails
+      }
+
       // Update local state
       setContacts(prev => prev.map(contact => 
         contact.id === updatedContact.id ? updatedContact : contact
@@ -692,6 +725,23 @@ function Contacts() {
       });
       
       await batch.commit();
+      
+      // Create alert for bulk delete
+      try {
+        const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+        await addDoc(alertsRef, {
+          type: 'contacts',
+          action: 'delete',
+          message: `Deleted all contacts for Grade ${grade}`,
+          grade: grade,
+          count: querySnapshot.size,
+          createdAt: serverTimestamp(),
+          status: 'success'
+        });
+      } catch (error) {
+        console.error('Failed to create delete alert:', error);
+        // Don't fail the delete if alert creation fails
+      }
       
       // Reset grade filter to 'all' and refresh contacts
       setSelectedGrade('all');
