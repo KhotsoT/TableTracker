@@ -537,6 +537,35 @@ function Messages() {
     return new Date(date.toDate()).toLocaleString();
   };
 
+  const formatMessageDate = (dateString) => {
+    if (!dateString) return 'Unknown';
+    
+    try {
+      const date = new Date(dateString);
+      
+      // Validate date is not invalid
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date:', dateString);
+        return 'Invalid date';
+      }
+      
+      // Format the date using local timezone
+      // Use toLocaleString with options for consistent formatting
+      return date.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch (error) {
+      console.error('Error formatting date:', dateString, error);
+      return 'Date error';
+    }
+  };
+
   const sendZoomConnectSMS = async (recipients, messageText) => {
     try {
       // Log the number of recipients for debugging
@@ -1168,7 +1197,7 @@ function Messages() {
                           {msg.message}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Sent: {new Date(msg.sentAt).toLocaleString()}
+                          Sent: {formatMessageDate(msg.sentAt)}
                         </p>
                       </div>
                       <div className="text-right space-y-1">
@@ -1332,7 +1361,7 @@ function Messages() {
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-500">Sent At</label>
                     <div className="px-4 py-3 bg-gray-50 rounded-lg text-sm text-gray-900">
-                      {new Date(selectedMessage.sentAt).toLocaleString()}
+                      {formatMessageDate(selectedMessage.sentAt)}
                     </div>
                   </div>
                 </>

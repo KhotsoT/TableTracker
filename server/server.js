@@ -387,10 +387,45 @@ app.get('/api/sent-messages', async (req, res) => {
       const messageKey = msg.message;
       
       if (!messageGroups[messageKey]) {
+        // Parse and normalize the date from ZoomConnect API
+        let sentAtDate;
+        if (msg.dateTimeSent) {
+          try {
+            // ZoomConnect API returns dates in format like "2025-02-11T10:52:09" or similar
+            // Parse the date and ensure it's valid
+            const parsedDate = new Date(msg.dateTimeSent);
+            
+            // Validate the parsed date
+            if (isNaN(parsedDate.getTime())) {
+              console.warn(`Invalid date format for message ${msg.messageId}: ${msg.dateTimeSent}`);
+              sentAtDate = new Date().toISOString();
+            } else {
+              // Check if date seems reasonable (not more than 1 day in the future)
+              const now = new Date();
+              const maxFutureDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+              
+              if (parsedDate > maxFutureDate) {
+                console.warn(`Date appears to be in the future for message ${msg.messageId}: ${msg.dateTimeSent}, parsed as: ${parsedDate.toISOString()}`);
+                // If it's way in the future, it might be a parsing error - use current time
+                sentAtDate = new Date().toISOString();
+              } else {
+                // Date is valid, use it
+                sentAtDate = parsedDate.toISOString();
+              }
+            }
+          } catch (error) {
+            console.error(`Error parsing date for message ${msg.messageId}:`, error);
+            sentAtDate = new Date().toISOString();
+          }
+        } else {
+          // No date provided, use current time
+          sentAtDate = new Date().toISOString();
+        }
+        
         messageGroups[messageKey] = {
           id: msg.messageId,
           message: msg.message,
-          sentAt: msg.dateTimeSent,
+          sentAt: sentAtDate,
           recipients: [],
           totalRecipients: 0,
           status: { delivered: 0, failed: 0, pending: 0 },
