@@ -65,7 +65,7 @@ function Login() {
           </div>
         </div>
         <div className="text-blue-100 text-sm">
-          © 2024 SchoolConnect. All rights reserved.
+          © {new Date().getFullYear()} SchoolConnect. All rights reserved.
         </div>
       </div>
 
