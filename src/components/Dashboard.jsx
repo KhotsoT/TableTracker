@@ -473,8 +473,8 @@ function Dashboard() {
     <div className="min-h-screen bg-gray-100">
       {/* Top Stats Bar */}
       <div className="bg-white border-b">
-        <div className="min-h-[5rem] flex items-center px-4 sm:px-8 py-4">
-          <div className="max-w-7xl mx-auto w-full space-y-1">
+        <div className="min-h-[5rem] flex items-center px-4 sm:px-8 py-4 w-full">
+          <div className="w-full space-y-1">
             <PageHeader
               title={SCHOOL_NAME}
             >
@@ -487,7 +487,7 @@ function Dashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
+      <div className="w-full px-4 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-8">
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* SMS Credits Card */}

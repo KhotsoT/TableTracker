@@ -53,7 +53,7 @@ function App() {
       <Router>
         <div className="flex h-screen bg-gray-100">
           {isAuthenticated && <Sidebar onLogout={handleLogout} />}
-          <main className={`flex-1 overflow-y-auto ${isAuthenticated ? 'ml-64' : ''}`}>
+          <main className={`flex-1 overflow-y-auto ${isAuthenticated ? 'ml-64' : ''} w-full`}>
             <Routes>
               <Route path="/login" element={
                 !isAuthenticated ? <Login /> : <Navigate to="/dashboard" replace />

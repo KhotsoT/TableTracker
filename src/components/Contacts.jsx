@@ -718,7 +718,7 @@ function Contacts() {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-8 space-y-6 w-full">
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Learner Management</h1>
@@ -811,10 +811,10 @@ function Contacts() {
       </div>
 
       {/* Contacts Table */}
-      <div className="mt-8">
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+      <div className="mt-8 w-full">
+        <Card className="overflow-hidden w-full">
+          <div className="w-full">
+            <table className="w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">

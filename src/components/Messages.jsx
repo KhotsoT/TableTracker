@@ -859,7 +859,7 @@ function Messages() {
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="w-full p-4">
       <div className="mb-4 p-4 bg-white rounded-lg shadow flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold">Messages</h1>
@@ -896,7 +896,7 @@ function Messages() {
         </TabsList>
 
         <TabsContent value="new">
-          <Card className="p-8">
+          <Card className="p-8 w-full">
             <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
             <form onSubmit={handleSubmit}>
               {/* Top section with dropdowns */}
@@ -935,7 +935,7 @@ function Messages() {
               </div>
 
               {/* Main content area - split into two columns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
                 {/* Left column - Message input */}
                 <div className="space-y-4">
                   <label className="text-sm font-medium block">Message</label>
@@ -1013,7 +1013,7 @@ function Messages() {
         </TabsContent>
 
         <TabsContent value="inbox">
-          <Card>
+          <Card className="w-full">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl font-semibold">Message Inbox</CardTitle>
@@ -1117,7 +1117,7 @@ function Messages() {
         </TabsContent>
 
         <TabsContent value="sent">
-          <div className="bg-white rounded-lg shadow">
+          <div className="bg-white rounded-lg shadow w-full">
             <div className="p-4 border-b">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">Sent Messages</h2>
