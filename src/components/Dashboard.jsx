@@ -183,13 +183,27 @@ function Dashboard() {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
-        const alertsQuery = query(
-          alertsRef, 
-          where('type', '==', 'sms'),
-          where('createdAt', '>=', thirtyDaysAgo),
-          orderBy('createdAt', 'desc'), 
-          limit(20)  // Fetch more to ensure we have enough unique messages after filtering
-        );
+        // Try query with date filter first, fallback to simple query if index missing
+        let alertsQuery;
+        try {
+          alertsQuery = query(
+            alertsRef, 
+            where('type', '==', 'sms'),
+            where('createdAt', '>=', thirtyDaysAgo),
+            orderBy('createdAt', 'desc'), 
+            limit(20)
+          );
+        } catch (error) {
+          console.warn('Failed to create filtered query, using simple query:', error);
+          // Fallback to simple query without date filter
+          alertsQuery = query(
+            alertsRef, 
+            where('type', '==', 'sms'),
+            orderBy('createdAt', 'desc'), 
+            limit(20)
+          );
+        }
+        
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
@@ -223,18 +237,27 @@ function Dashboard() {
                       console.warn('Invalid createdAt date for alert:', doc.id, data.createdAt);
                       createdAtDate = new Date(); // Use current time as fallback
                     } else {
-                      // Double-check the date is within the last 30 days
+                      // Double-check the date is within the last 30 days (client-side filter if query didn't filter)
                       const now = new Date();
                       const daysDiff = (now - createdAtDate) / (1000 * 60 * 60 * 24);
-                      if (daysDiff > 30 || daysDiff < 0) {
-                        console.warn('Alert date outside 30-day window:', {
+                      if (daysDiff > 30) {
+                        console.warn('Alert date outside 30-day window (skipping):', {
                           alertId: doc.id,
                           createdAt: createdAtDate.toISOString(),
-                          daysAgo: daysDiff,
+                          daysAgo: daysDiff.toFixed(1),
                           message: data.message?.substring(0, 50)
                         });
-                        // Skip this alert if it's too old or in the future
+                        // Skip this alert if it's too old
                         return;
+                      }
+                      // Allow future dates (within 1 day) in case of clock skew
+                      if (daysDiff < -1) {
+                        console.warn('Alert date appears to be more than 1 day in the future:', {
+                          alertId: doc.id,
+                          createdAt: createdAtDate.toISOString(),
+                          daysAgo: daysDiff.toFixed(1)
+                        });
+                        // Still include it but log the warning
                       }
                     }
                   } else {
