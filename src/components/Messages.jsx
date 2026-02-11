@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db, SCHOOL_ID } from '../config/firebase';
 import API_BASE_URL from '../config/api';
-import { collection, getDocs, addDoc, query, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, orderBy, limit, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { FaPaperPlane, FaUserFriends, FaSpinner, FaHistory, FaCheck, FaClock, FaExclamationCircle, FaUsers, FaGraduationCap, FaInbox, FaEnvelope, FaHome, FaQuestionCircle, FaPlus } from 'react-icons/fa';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { Button } from "./ui/button";
@@ -498,7 +498,7 @@ function Messages() {
         type: 'sms',
         message: message,
         recipients_count: previewRecipients.length,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
         status: 'sent'
       });
       
