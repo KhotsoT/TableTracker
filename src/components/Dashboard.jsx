@@ -199,13 +199,40 @@ function Dashboard() {
               const messageKey = data.message || '';
               
               if (!uniqueMessages.has(messageKey)) {
+                // Parse the createdAt date properly
+                let createdAtDate;
+                try {
+                  if (data.createdAt) {
+                    // Handle Firestore Timestamp
+                    if (data.createdAt.toDate) {
+                      createdAtDate = data.createdAt.toDate();
+                    } else if (data.createdAt instanceof Date) {
+                      createdAtDate = data.createdAt;
+                    } else {
+                      // Try parsing as string or number
+                      createdAtDate = new Date(data.createdAt);
+                    }
+                    
+                    // Validate the date
+                    if (isNaN(createdAtDate.getTime())) {
+                      console.warn('Invalid createdAt date for alert:', doc.id, data.createdAt);
+                      createdAtDate = new Date(); // Use current time as fallback
+                    }
+                  } else {
+                    createdAtDate = new Date();
+                  }
+                } catch (error) {
+                  console.error('Error parsing createdAt date:', error);
+                  createdAtDate = new Date();
+                }
+                
                 uniqueMessages.set(messageKey, {
                   id: doc.id,
                   type: 'sms',
                   message: data.message || '',
                   recipients: data.recipients_count || 1,
-                  time: formatTime(data.createdAt?.toDate()),
-                  createdAt: data.createdAt?.toDate() || new Date()
+                  time: formatTime(createdAtDate),
+                  createdAt: createdAtDate
                 });
               }
             });
@@ -261,11 +288,45 @@ function Dashboard() {
 
   const formatTime = (date) => {
     if (!date) return 'Unknown'
-    const minutes = Math.floor((new Date() - date) / 60000)
-    if (minutes < 60) return `${minutes} minutes ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours} hours ago`
-    return date.toLocaleDateString()
+    
+    try {
+      // Ensure date is a Date object
+      const dateObj = date instanceof Date ? date : new Date(date);
+      
+      // Validate date
+      if (isNaN(dateObj.getTime())) {
+        console.warn('Invalid date passed to formatTime:', date);
+        return 'Invalid date';
+      }
+      
+      const now = new Date();
+      const diffMs = now - dateObj;
+      const minutes = Math.floor(diffMs / 60000);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+      
+      // If date is in the future (more than 1 minute), something is wrong
+      if (diffMs < -60000) {
+        console.warn('Date appears to be in the future:', dateObj, 'Current time:', now);
+        return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      
+      if (minutes < 1) return 'Just now'
+      if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
+      if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+      if (days === 1) return 'Yesterday'
+      if (days < 7) return `${days} days ago`
+      if (days < 30) {
+        const weeks = Math.floor(days / 7);
+        return `${weeks} week${weeks !== 1 ? 's' : ''} ago`
+      }
+      
+      // For older dates, show formatted date
+      return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (error) {
+      console.error('Error formatting time:', error);
+      return 'Date error';
+    }
   }
 
   const initializeSchool = async () => {
