@@ -1,0 +1,48 @@
+---
+description: Always commit and deploy changes after making code modifications
+alwaysApply: true
+---
+
+# Deployment Workflow
+
+After making any code changes, **always** commit and deploy:
+
+## Workflow Steps
+
+1. **Stage changes**: `git add <changed-files>`
+2. **Commit with descriptive message**: `git commit -m "Description of changes"`
+3. **Push to GitHub**: `git push origin main` (triggers Render autodeploy for backend)
+4. **Build frontend**: `npm run build` (from `sms-tracker` directory)
+5. **Deploy frontend**: `firebase deploy --only hosting`
+
+## Important Notes
+
+- **Backend (server/)**: Pushing to GitHub automatically triggers Render deployment
+- **Frontend**: Must manually build and deploy to Firebase after changes
+- **Always deploy both**: Even if only one part changed, ensure both are deployed
+- **Test after deployment**: Verify changes work in production environment
+
+## Example Commands
+
+```bash
+# After making changes to server code
+cd sms-tracker
+git add server/server.js
+git commit -m "Fix CORS: Add firebaseapp.com origin"
+git push origin main
+# Render will auto-deploy
+
+# After making changes to frontend code
+cd sms-tracker
+git add src/components/Contacts.jsx
+git commit -m "Reset grade filter after delete all"
+git push origin main
+npm run build
+firebase deploy --only hosting
+```
+
+## Never Skip Deployment
+
+- Don't just commit without deploying
+- Don't assume changes will auto-deploy (only backend does)
+- Always verify deployment completed successfully
