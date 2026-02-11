@@ -45,6 +45,7 @@ app.use(cors({
     'http://localhost:5173',
     'http://localhost:3000',
     'https://schoolconnect-curtis.web.app',
+    'https://schoolconnect-curtis.firebaseapp.com',
     'https://schoolconnect-server.onrender.com'
   ],
   methods: ['GET', 'POST'],
