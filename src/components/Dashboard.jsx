@@ -179,44 +179,38 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener - filter by last 24 hours
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Real-time alerts listener
         const alertsQuery = query(
           alertsRef, 
           where('type', '==', 'sms'),
-          where('createdAt', '>=', twentyFourHoursAgo),
           orderBy('createdAt', 'desc'), 
-          limit(20)  // Fetch more to ensure we have enough unique messages after deduplication
+          limit(10)  // Fetch more than 5 to ensure we have enough unique messages
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             console.log('Received SMS activity update:', snapshot.docs.length, 'activities');
             
             // Create a Map to store unique messages by their content
-            // Keep the most recent version of each message
             const uniqueMessages = new Map();
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
-              const createdAt = data.createdAt?.toDate() || new Date();
               // Use message content as the key to group identical messages
               const messageKey = data.message || '';
               
-              // If we haven't seen this message, or this version is more recent, update it
-              if (!uniqueMessages.has(messageKey) || 
-                  createdAt > (uniqueMessages.get(messageKey).createdAt || new Date(0))) {
+              if (!uniqueMessages.has(messageKey)) {
                 uniqueMessages.set(messageKey, {
                   id: doc.id,
                   type: 'sms',
                   message: data.message || '',
                   recipients: data.recipients_count || 1,
-                  time: formatTime(createdAt),
-                  createdAt: createdAt
+                  time: formatTime(data.createdAt?.toDate()),
+                  createdAt: data.createdAt?.toDate() || new Date()
                 });
               }
             });
             
-            // Convert Map to array, sort by most recent, and take the top 5
+            // Convert Map to array and take the last 5 unique messages
             const activity = Array.from(uniqueMessages.values())
               .sort((a, b) => b.createdAt - a.createdAt)
               .slice(0, 5);
@@ -267,19 +261,11 @@ function Dashboard() {
 
   const formatTime = (date) => {
     if (!date) return 'Unknown'
-    const now = new Date()
-    const diffMs = now - date
-    const minutes = Math.floor(diffMs / 60000)
+    const minutes = Math.floor((new Date() - date) / 60000)
+    if (minutes < 60) return `${minutes} minutes ago`
     const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-    
-    if (minutes < 1) return 'Just now'
-    if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
-    if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`
-    if (days === 1) return 'Yesterday'
-    if (days < 7) return `${days} days ago`
-    // For older dates, show formatted date
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    if (hours < 24) return `${hours} hours ago`
+    return date.toLocaleDateString()
   }
 
   const initializeSchool = async () => {
