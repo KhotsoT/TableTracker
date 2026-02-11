@@ -588,7 +588,7 @@ function Dashboard() {
             {recentActivity.length === 0 && (
               <div className="px-4 sm:px-8 py-12 sm:py-16 text-center">
                 <History className="w-8 h-8 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">No recent SMS activity</p>
+                <p className="text-gray-500 text-sm">No recent activity</p>
               </div>
             )}
           </div>
