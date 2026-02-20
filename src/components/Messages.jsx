@@ -390,8 +390,68 @@ function Messages() {
     }
   };
 
+  // Parse and format phone numbers from comma-separated input
+  const parsePhoneNumbers = (input) => {
+    if (!input.trim()) return [];
+    
+    const numbers = input.split(',')
+      .map(num => num.trim())
+      .filter(num => num.length > 0);
+    
+    const formattedRecipients = numbers.map((number, index) => {
+      // Clean and format the phone number (same logic as sendZoomConnectSMS)
+      let cleanedNumber = number.replace(/\s+/g, ''); // Remove spaces
+      
+      // If number starts with '27', replace with '0'
+      if (cleanedNumber.startsWith('27')) {
+        cleanedNumber = '0' + cleanedNumber.slice(2);
+      }
+      
+      // If number starts with '+27', replace with '0'
+      if (cleanedNumber.startsWith('+27')) {
+        cleanedNumber = '0' + cleanedNumber.slice(3);
+      }
+      
+      // Ensure number starts with '0'
+      if (!cleanedNumber.startsWith('0')) {
+        cleanedNumber = '0' + cleanedNumber;
+      }
+      
+      // Convert to international format (27) for sending
+      let internationalNumber = cleanedNumber;
+      if (internationalNumber.startsWith('0')) {
+        internationalNumber = '27' + internationalNumber.slice(1);
+      }
+      
+      return {
+        name: `Phone ${index + 1}`,
+        number: cleanedNumber, // Display format
+        internationalNumber: internationalNumber, // Sending format
+        grade: 'N/A',
+        relation: 'Direct'
+      };
+    }).filter(recipient => {
+      // Validate the final number format
+      return /^27\d{9}$/.test(recipient.internationalNumber);
+    });
+    
+    return formattedRecipients;
+  };
+
   // Update the recipients filter for better handling
   useEffect(() => {
+    // Handle phone numbers mode first
+    if (sendMode === 'phoneNumbers') {
+      const recipients = parsePhoneNumbers(phoneNumbersInput);
+      setPreviewRecipients(recipients);
+      
+      // Calculate credits for phone numbers
+      const credits = calculateEstimatedCredits(message, recipients.length);
+      setEstimatedCredits(credits);
+      return;
+    }
+
+    // Handle grades mode
     if (contacts.length === 0) return;
 
     console.log('Filtering contacts for grade:', selectedGrade);
@@ -409,16 +469,11 @@ function Messages() {
       // Convert both to strings for comparison and trim any whitespace
       const contactGrade = String(contact.grade).trim();
       const selectedGradeStr = String(selectedGrade).trim();
-      
+
       return contactGrade === selectedGradeStr;
     });
 
     console.log('Filtered contacts count:', filtered.length);
-    
-    // Reset phone numbers input when switching to grades mode
-    if (sendMode === 'grades') {
-      setPhoneNumbersInput('');
-    }
 
     const recipients = filtered.flatMap(contact => {
       const recipients = [];
@@ -635,6 +690,11 @@ function Messages() {
           message: messageText
         };
       }).filter(Boolean); // Remove any null entries from invalid numbers
+
+      // Check if we have any valid messages
+      if (messages.length === 0) {
+        throw new Error('No valid phone numbers found. Please check the format and try again.');
+      }
 
       // If we have a large number of recipients, send in batches
       const BATCH_SIZE = 50; // Adjust based on server capacity
