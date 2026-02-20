@@ -608,10 +608,17 @@ function Messages() {
         setPhoneNumbersInput('');
       }
       
-      // Hide success message after 5 seconds
+      // Refresh sent messages list to show the new message
+      await refreshSentMessages();
+      
+      // Hide success message after 3 seconds, then refresh page to ensure clean state
       setTimeout(() => {
         setShowSuccess(false);
-      }, 5000);
+        // Refresh the page after a short delay to ensure everything is reset
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }, 3000);
 
     } catch (error) {
       console.error('Failed to send SMS:', error);
