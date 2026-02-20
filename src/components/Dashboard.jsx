@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, History, MapPin, CheckCircle, Tablet, Users, Wallet, Battery, Wifi } from 'lucide-react'
 import { Card } from './ui/card'
 import { db, SCHOOL_ID, SCHOOL_NAME } from '../config/firebase'
-import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc, onSnapshot, where, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc, onSnapshot, where } from 'firebase/firestore'
 import { getSMSBalance } from '../services/smsService'
 import { PageContainer, PageHeader } from './Layout'
 import { getAuth } from 'firebase/auth'
@@ -179,21 +179,17 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener - show both SMS and contact activities from last 24 hours
-        const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+        // Real-time alerts listener - show both SMS and contact activities (last 5)
         const alertsQuery = query(
           alertsRef, 
-          where('createdAt', '>=', twentyFourHoursAgo),
           orderBy('createdAt', 'desc'), 
-          limit(20)  // Fetch more to ensure we have enough activities
+          limit(10)  // Fetch more to account for deduplication, then take top 5
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             console.log('Received activity update:', snapshot.docs.length, 'activities');
             
             const activities = [];
-            const now = new Date();
-            const twentyFourHoursAgoMs = now.getTime() - (24 * 60 * 60 * 1000);
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
@@ -207,11 +203,6 @@ function Dashboard() {
                 createdAt = new Date(data.createdAt.seconds * 1000);
               } else {
                 createdAt = new Date();
-              }
-              
-              // Double-check: only include activities from last 24 hours
-              if (createdAt.getTime() < twentyFourHoursAgoMs) {
-                return; // Skip old activities
               }
               
               if (data.type === 'sms') {
@@ -243,9 +234,9 @@ function Dashboard() {
               }
             });
             
-            // Sort by date and take the most recent 5
+            // Sort by date (already sorted by query, but ensure) and take the most recent 5
             const sortedActivities = activities
-              .sort((a, b) => b.createdAt - a.createdAt)
+              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
               .slice(0, 5);
             
             console.log('Processed activities:', sortedActivities.length, 'activities');
@@ -494,7 +485,7 @@ function Dashboard() {
             <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-                <span className="text-xs sm:text-sm text-gray-500">Last 24 hours</span>
+                <span className="text-xs sm:text-sm text-gray-500">Last 5 activities</span>
               </div>
             </div>
             <div className="divide-y divide-gray-100">
@@ -599,12 +590,12 @@ function Dashboard() {
 
         {/* Activity Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
-              <span className="text-xs sm:text-sm text-gray-500">Last 24 hours</span>
+            <div className="px-4 sm:px-8 py-4 sm:py-6 border-b">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900">Recent Activity</h2>
+                <span className="text-xs sm:text-sm text-gray-500">Last 5 activities</span>
+              </div>
             </div>
-          </div>
           <div className="divide-y divide-gray-100">
             {recentActivity.map((activity) => (
               <div key={activity.id} className="flex items-start gap-3 sm:gap-4 px-4 sm:px-8 py-4 sm:py-6 hover:bg-gray-50 transition-colors">
