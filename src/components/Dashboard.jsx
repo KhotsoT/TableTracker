@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, History, MapPin, CheckCircle, Tablet, Users, Wallet, Battery, Wifi } from 'lucide-react'
 import { Card } from './ui/card'
 import { db, SCHOOL_ID, SCHOOL_NAME } from '../config/firebase'
-import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc, onSnapshot, where } from 'firebase/firestore'
+import { doc, getDoc, collection, query, orderBy, limit, getDocs, setDoc, onSnapshot, where, Timestamp } from 'firebase/firestore'
 import { getSMSBalance } from '../services/smsService'
 import { PageContainer, PageHeader } from './Layout'
 import { getAuth } from 'firebase/auth'
@@ -179,9 +179,11 @@ function Dashboard() {
           }));
         });
 
-        // Real-time alerts listener - show both SMS and contact activities
+        // Real-time alerts listener - show both SMS and contact activities from last 24 hours
+        const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
         const alertsQuery = query(
           alertsRef, 
+          where('createdAt', '>=', twentyFourHoursAgo),
           orderBy('createdAt', 'desc'), 
           limit(20)  // Fetch more to ensure we have enough activities
         );
@@ -190,10 +192,27 @@ function Dashboard() {
             console.log('Received activity update:', snapshot.docs.length, 'activities');
             
             const activities = [];
+            const now = new Date();
+            const twentyFourHoursAgoMs = now.getTime() - (24 * 60 * 60 * 1000);
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
-              const createdAt = data.createdAt?.toDate() || new Date();
+              // Handle both Timestamp and Date objects
+              let createdAt;
+              if (data.createdAt?.toDate) {
+                createdAt = data.createdAt.toDate();
+              } else if (data.createdAt instanceof Date) {
+                createdAt = data.createdAt;
+              } else if (data.createdAt?.seconds) {
+                createdAt = new Date(data.createdAt.seconds * 1000);
+              } else {
+                createdAt = new Date();
+              }
+              
+              // Double-check: only include activities from last 24 hours
+              if (createdAt.getTime() < twentyFourHoursAgoMs) {
+                return; // Skip old activities
+              }
               
               if (data.type === 'sms') {
                 // For SMS, use message content as key to group identical messages
@@ -275,11 +294,36 @@ function Dashboard() {
 
   const formatTime = (date) => {
     if (!date) return 'Unknown'
-    const minutes = Math.floor((new Date() - date) / 60000)
-    if (minutes < 60) return `${minutes} minutes ago`
-    const hours = Math.floor(minutes / 60)
-    if (hours < 24) return `${hours} hours ago`
-    return date.toLocaleDateString()
+    
+    // Ensure date is a Date object
+    let dateObj;
+    if (date instanceof Date) {
+      dateObj = date;
+    } else if (date?.toDate) {
+      dateObj = date.toDate();
+    } else if (date?.seconds) {
+      dateObj = new Date(date.seconds * 1000);
+    } else {
+      dateObj = new Date(date);
+    }
+    
+    const now = new Date();
+    const diffMs = now.getTime() - dateObj.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    
+    // For activities older than 24 hours (shouldn't happen with our filter, but just in case)
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    
+    // Format as date if older
+    return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
 
   const initializeSchool = async () => {
