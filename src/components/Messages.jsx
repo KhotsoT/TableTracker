@@ -492,14 +492,16 @@ function Messages() {
       const result = await sendZoomConnectSMS(previewRecipients, message);
       
       // Create alert document for the sent SMS - MUST happen for Recent Activity to work
+      // This creates ONE alert per message send (not per recipient), so 1 message to 1000 recipients = 1 alert
       const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
-      await addDoc(alertsRef, {
+      const alertDoc = {
         type: 'sms',
-        message: message,
+        message: message.trim(),
         recipients_count: previewRecipients.length,
         createdAt: serverTimestamp(),
         status: 'sent'
-      });
+      };
+      await addDoc(alertsRef, alertDoc);
       
       // Refresh credits after sending messages
       await fetchCredits();

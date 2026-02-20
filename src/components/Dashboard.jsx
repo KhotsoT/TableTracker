@@ -215,15 +215,31 @@ function Dashboard() {
               }
               
               if (data.type === 'sms') {
-                // For SMS activities - show all unique messages
-                activities.push({
-                  id: doc.id,
-                  type: 'sms',
-                  message: data.message || '',
-                  recipients: data.recipients_count || 0,
-                  time: formatTime(createdAt),
-                  createdAt: createdAt
-                });
+                // For SMS, use message content as key to group identical messages
+                // This prevents showing 1000 entries when sending 1 message to 1000 recipients
+                const messageKey = data.message || '';
+                const existingActivity = activities.find(a => a.type === 'sms' && a.message === messageKey);
+                
+                if (!existingActivity) {
+                  // Add the most recent occurrence of this message
+                  activities.push({
+                    id: doc.id,
+                    type: 'sms',
+                    message: data.message || '',
+                    recipients: data.recipients_count || 0,
+                    time: formatTime(createdAt),
+                    createdAt: createdAt
+                  });
+                } else {
+                  // If we find a duplicate, keep the one with more recipients or more recent date
+                  if (data.recipients_count > existingActivity.recipients || 
+                      createdAt.getTime() > existingActivity.createdAt.getTime()) {
+                    existingActivity.id = doc.id;
+                    existingActivity.recipients = Math.max(existingActivity.recipients, data.recipients_count || 0);
+                    existingActivity.createdAt = createdAt;
+                    existingActivity.time = formatTime(createdAt);
+                  }
+                }
               } else if (data.type === 'contacts') {
                 // For contact activities, show all of them
                 activities.push({
