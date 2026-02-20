@@ -562,8 +562,9 @@ function Messages() {
 
     // Check available credits before sending
     const requiredCredits = calculateEstimatedCredits(message, previewRecipients.length);
-    if (credits < requiredCredits) {
-      setError(`Insufficient credits. Required: ${requiredCredits}, Available: ${credits}`);
+    const availableCredits = credits || 0;
+    if (availableCredits < requiredCredits) {
+      setError(`Insufficient credits. Required: ${requiredCredits}, Available: ${availableCredits}`);
       setIsLoading(false);
       return;
     }
@@ -1030,6 +1031,16 @@ function Messages() {
         <TabsContent value="new">
           <Card className="p-8 w-full">
             <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-600 text-sm">{error}</p>
+              </div>
+            )}
+            {showSuccess && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-600 text-sm">Message sent successfully!</p>
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               {/* Send Mode Toggle */}
               <div className="mb-6">
