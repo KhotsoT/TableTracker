@@ -189,7 +189,6 @@ function Dashboard() {
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             const activities = [];
-            const seenMessageKeys = new Set(); // Track unique messages to avoid duplicates
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
@@ -217,21 +216,15 @@ function Dashboard() {
               }
               
               if (data.type === 'sms') {
-                // Each alert = one send operation = one activity
-                // Use message content + timestamp to identify unique sends
-                // If same message sent multiple times, show each send as separate activity
-                const messageKey = (data.message || '').trim();
+                // Deduplicate by message content only - same message = one activity
+                // Show the most recent send with highest recipient count
+                const messageKey = (data.message || '').trim().toLowerCase();
+                const existingActivity = activities.find(a => 
+                  a.type === 'sms' && (a.message || '').trim().toLowerCase() === messageKey
+                );
                 
-                // Only deduplicate if exact same message sent within 1 second (likely duplicate)
-                const isDuplicate = Array.from(seenMessageKeys).some(key => {
-                  const [msg, timestamp] = key.split('|');
-                  return msg === messageKey && Math.abs(parseInt(timestamp) - createdAt.getTime()) < 1000;
-                });
-                
-                if (!isDuplicate) {
-                  const uniqueKey = `${messageKey}|${createdAt.getTime()}`;
-                  seenMessageKeys.add(uniqueKey);
-                  
+                if (!existingActivity) {
+                  // First occurrence of this message - add it
                   activities.push({
                     id: doc.id,
                     type: 'sms',
@@ -240,6 +233,18 @@ function Dashboard() {
                     time: formatTime(createdAt),
                     createdAt: createdAt
                   });
+                } else {
+                  // Same message sent again - keep the one with more recipients or more recent date
+                  if (data.recipients_count > existingActivity.recipients || 
+                      createdAt.getTime() > existingActivity.createdAt.getTime()) {
+                    existingActivity.id = doc.id;
+                    existingActivity.recipients = Math.max(existingActivity.recipients, data.recipients_count || 0);
+                    // Update to most recent timestamp
+                    if (createdAt.getTime() > existingActivity.createdAt.getTime()) {
+                      existingActivity.createdAt = createdAt;
+                      existingActivity.time = formatTime(createdAt);
+                    }
+                  }
                 }
               } else if (data.type === 'contacts') {
                 // For contact activities, show all of them
