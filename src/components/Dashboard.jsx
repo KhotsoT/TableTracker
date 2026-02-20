@@ -183,12 +183,10 @@ function Dashboard() {
         const alertsQuery = query(
           alertsRef, 
           orderBy('createdAt', 'desc'), 
-          limit(10)  // Fetch more to account for deduplication, then take top 5
+          limit(50)  // Fetch more to account for deduplication and ensure we get recent ones
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
-            console.log('Received activity update:', snapshot.docs.length, 'activities');
-            
             const activities = [];
             
             snapshot.docs.forEach(doc => {
@@ -202,22 +200,13 @@ function Dashboard() {
               } else if (data.createdAt?.seconds) {
                 createdAt = new Date(data.createdAt.seconds * 1000);
               } else {
-                console.warn('Alert missing createdAt:', doc.id, data);
                 return; // Skip alerts without valid timestamps
               }
               
               // Skip if createdAt is invalid
               if (isNaN(createdAt.getTime())) {
-                console.warn('Alert has invalid createdAt:', doc.id, data.createdAt);
                 return;
               }
-              
-              console.log('Processing activity:', {
-                id: doc.id,
-                type: data.type,
-                createdAt: createdAt.toISOString(),
-                message: data.message?.substring(0, 50)
-              });
               
               if (data.type === 'sms') {
                 // For SMS, use message content as key to group identical messages
@@ -253,12 +242,6 @@ function Dashboard() {
               .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
               .slice(0, 5);
             
-            console.log('Processed activities:', sortedActivities.length, 'activities');
-            console.log('Activity dates:', sortedActivities.map(a => ({
-              date: a.createdAt.toISOString(),
-              time: a.time,
-              message: a.message?.substring(0, 30)
-            })));
             setRecentActivity(sortedActivities);
           } catch (error) {
             console.error('Error processing activity:', error);
