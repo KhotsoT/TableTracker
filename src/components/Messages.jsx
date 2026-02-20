@@ -546,6 +546,7 @@ function Messages() {
 
     if (!message.trim()) {
       setError('Please enter a message');
+      setIsLoading(false);
       return;
     }
 
@@ -555,6 +556,14 @@ function Messages() {
       } else {
         setError('No recipients selected');
       }
+      setIsLoading(false);
+      return;
+    }
+
+    // Check available credits before sending
+    const requiredCredits = calculateEstimatedCredits(message, previewRecipients.length);
+    if (credits < requiredCredits) {
+      setError(`Insufficient credits. Required: ${requiredCredits}, Available: ${credits}`);
       setIsLoading(false);
       return;
     }
@@ -696,9 +705,15 @@ function Messages() {
         throw new Error('No valid phone numbers found. Please check the format and try again.');
       }
 
+      // IMPORTANT: Credits are deducted by ZoomConnect API when messages are sent
+      // Even if sending fails, ZoomConnect may have already deducted credits for messages that were attempted
+      // We check credits before sending, but cannot refund credits if ZoomConnect deducts them
+
       // If we have a large number of recipients, send in batches
       const BATCH_SIZE = 50; // Adjust based on server capacity
       let allResults = [];
+      let totalSent = 0;
+      let totalFailed = 0;
       
       // Process in batches if more than BATCH_SIZE recipients
       if (messages.length > BATCH_SIZE) {
@@ -716,16 +731,21 @@ function Messages() {
           const data = await response.json();
           
           if (!data.success) {
-            throw new Error(data.error || `Failed to send batch ${i/BATCH_SIZE + 1}`);
+            // If batch fails, count how many were attempted
+            // Note: ZoomConnect may have deducted credits for messages sent before failure
+            throw new Error(data.error || `Failed to send batch ${Math.floor(i/BATCH_SIZE) + 1}`);
           }
           
+          totalSent += data.data?.totalSent || 0;
+          totalFailed += data.data?.totalFailed || 0;
           allResults.push(data);
         }
         
         return {
           success: true,
           batches: allResults.length,
-          totalSent: messages.length
+          totalSent: totalSent,
+          totalFailed: totalFailed
         };
       } else {
         // Send all messages in one request if fewer than BATCH_SIZE
@@ -740,6 +760,8 @@ function Messages() {
         const data = await response.json();
         
         if (!data.success) {
+          // If sending fails, ZoomConnect may have already deducted credits for messages that were sent
+          // before the failure occurred
           throw new Error(data.error || 'Failed to send SMS');
         }
 
