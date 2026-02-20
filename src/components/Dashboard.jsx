@@ -231,6 +231,7 @@ function Dashboard() {
                     message: data.message || '',
                     recipients: data.recipients_count || 0,
                     time: formatTime(createdAt),
+                    timestamp: formatTimestamp(createdAt),
                     createdAt: createdAt
                   });
                 } else {
@@ -243,6 +244,7 @@ function Dashboard() {
                     if (createdAt.getTime() > existingActivity.createdAt.getTime()) {
                       existingActivity.createdAt = createdAt;
                       existingActivity.time = formatTime(createdAt);
+                      existingActivity.timestamp = formatTimestamp(createdAt);
                     }
                   }
                 }
@@ -255,6 +257,7 @@ function Dashboard() {
                   action: data.action || 'unknown',
                   count: data.count || 0,
                   time: formatTime(createdAt),
+                  timestamp: formatTimestamp(createdAt),
                   createdAt: createdAt
                 });
               }
@@ -341,6 +344,33 @@ function Dashboard() {
     
     // Format as date if older
     return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  const formatTimestamp = (date) => {
+    if (!date) return 'Unknown'
+    
+    // Ensure date is a Date object
+    let dateObj;
+    if (date instanceof Date) {
+      dateObj = date;
+    } else if (date?.toDate) {
+      dateObj = date.toDate();
+    } else if (date?.seconds) {
+      dateObj = new Date(date.seconds * 1000);
+    } else {
+      dateObj = new Date(date);
+    }
+    
+    // Return full timestamp: DD/MM/YYYY, HH:MM:SS
+    return dateObj.toLocaleString('en-GB', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
   }
 
   const initializeSchool = async () => {
@@ -638,6 +668,11 @@ function Dashboard() {
                       {activity.type === 'contacts' && activity.count > 0 && (
                         <p className="text-sm text-gray-500 mt-2">
                           {activity.count} contact{activity.count !== 1 ? 's' : ''} {activity.action === 'import' ? 'imported' : activity.action === 'update' ? 'updated' : 'deleted'}
+                        </p>
+                      )}
+                      {activity.timestamp && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          {activity.timestamp}
                         </p>
                       )}
                     </div>
