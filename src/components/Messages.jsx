@@ -493,6 +493,7 @@ function Messages() {
       
       // Create alert document for the sent SMS - MUST happen for Recent Activity to work
       // This creates ONE alert per message send (not per recipient), so 1 message to 1000 recipients = 1 alert
+      // CRITICAL: This must succeed or Recent Activity won't show the message
       const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
       const alertDoc = {
         type: 'sms',
@@ -501,7 +502,14 @@ function Messages() {
         createdAt: serverTimestamp(),
         status: 'sent'
       };
-      await addDoc(alertsRef, alertDoc);
+      
+      // Ensure alert is created - if this fails, the whole operation should fail
+      const alertRef = await addDoc(alertsRef, alertDoc);
+      
+      // Verify alert was created
+      if (!alertRef.id) {
+        throw new Error('Failed to create activity alert');
+      }
       
       // Refresh credits after sending messages
       await fetchCredits();

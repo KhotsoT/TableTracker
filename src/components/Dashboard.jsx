@@ -184,7 +184,7 @@ function Dashboard() {
         const alertsQuery = query(
           alertsRef, 
           orderBy('createdAt', 'desc'), 
-          limit(10)  // Fetch last 10 alerts to get 5 unique activities (accounting for potential duplicates)
+          limit(50)  // Fetch enough to ensure we get recent activities even after deduplication
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
