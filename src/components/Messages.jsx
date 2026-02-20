@@ -573,28 +573,13 @@ function Messages() {
     try {
       // Store recipient count before sending (in case previewRecipients gets cleared)
       const recipientCount = previewRecipients.length;
+      const messageText = message.trim();
       
+      // Send SMS - this is the critical operation
       const result = await sendZoomConnectSMS(previewRecipients, message);
       
-      // Create alert document for the sent SMS - MUST happen for Recent Activity to work
-      // This creates ONE alert per message send (not per recipient), so 1 message to 1000 recipients = 1 alert
-      // CRITICAL: This must succeed or Recent Activity won't show the message
-      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
-      const alertDoc = {
-        type: 'sms',
-        message: message.trim(),
-        recipients_count: recipientCount,
-        createdAt: serverTimestamp(),
-        status: 'sent'
-      };
-      
-      // Ensure alert is created - if this fails, the whole operation should fail
-      const alertRef = await addDoc(alertsRef, alertDoc);
-      
-      // Verify alert was created
-      if (!alertRef.id) {
-        throw new Error('Failed to create activity alert');
-      }
+      // IMMEDIATELY clear loading state and show success - don't wait for anything else!
+      setIsLoading(false);
       
       // Clear form fields immediately
       setMessage('');
@@ -605,24 +590,36 @@ function Messages() {
         setPhoneNumbersInput('');
       }
       
-      // Clear loading state immediately so user can send another message
-      setIsLoading(false);
-      
-      // Show toast notification mid-screen (no page refresh)
+      // Show toast notification immediately
       toast({
         title: "Message Sent Successfully!",
         description: `Sent to ${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}`,
         variant: "default",
       });
       
-      // Refresh credits and sent messages in background (non-blocking)
+      // Everything else happens in background (non-blocking):
+      // 1. Create alert for Recent Activity
+      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+      const alertDoc = {
+        type: 'sms',
+        message: messageText,
+        recipients_count: recipientCount,
+        createdAt: serverTimestamp(),
+        status: 'sent'
+      };
+      addDoc(alertsRef, alertDoc).catch(err => {
+        console.error('Failed to create activity alert:', err);
+        // Don't show error to user - alert creation is not critical for sending
+      });
+      
+      // 2. Refresh credits and sent messages
       fetchCredits().catch(err => console.error('Failed to refresh credits:', err));
       refreshSentMessages().catch(err => console.error('Failed to refresh sent messages:', err));
 
     } catch (error) {
       console.error('Failed to send SMS:', error);
-      setError(error.message);
       setIsLoading(false);
+      setError(error.message);
     }
   };
 
