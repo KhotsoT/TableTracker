@@ -596,13 +596,7 @@ function Messages() {
         throw new Error('Failed to create activity alert');
       }
       
-      // Refresh credits after sending messages
-      await fetchCredits();
-      
-      // Refresh sent messages list to show the new message
-      await refreshSentMessages();
-      
-      // Clear form fields
+      // Clear form fields immediately
       setMessage('');
       setError(null);
       
@@ -611,18 +605,23 @@ function Messages() {
         setPhoneNumbersInput('');
       }
       
+      // Clear loading state immediately so user can send another message
+      setIsLoading(false);
+      
       // Show toast notification mid-screen (no page refresh)
       toast({
         title: "Message Sent Successfully!",
         description: `Sent to ${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}`,
         variant: "default",
-        duration: 5000,
       });
+      
+      // Refresh credits and sent messages in background (non-blocking)
+      fetchCredits().catch(err => console.error('Failed to refresh credits:', err));
+      refreshSentMessages().catch(err => console.error('Failed to refresh sent messages:', err));
 
     } catch (error) {
       console.error('Failed to send SMS:', error);
       setError(error.message);
-    } finally {
       setIsLoading(false);
     }
   };
