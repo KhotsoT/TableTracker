@@ -202,8 +202,16 @@ function Dashboard() {
               } else if (data.createdAt?.seconds) {
                 createdAt = new Date(data.createdAt.seconds * 1000);
               } else {
-                createdAt = new Date();
+                console.warn('Alert missing createdAt:', doc.id, data);
+                return; // Skip alerts without valid timestamps
               }
+              
+              console.log('Processing activity:', {
+                id: doc.id,
+                type: data.type,
+                createdAt: createdAt.toISOString(),
+                message: data.message?.substring(0, 50)
+              });
               
               if (data.type === 'sms') {
                 // For SMS, use message content as key to group identical messages
@@ -240,6 +248,11 @@ function Dashboard() {
               .slice(0, 5);
             
             console.log('Processed activities:', sortedActivities.length, 'activities');
+            console.log('Activity dates:', sortedActivities.map(a => ({
+              date: a.createdAt.toISOString(),
+              time: a.time,
+              message: a.message?.substring(0, 30)
+            })));
             setRecentActivity(sortedActivities);
           } catch (error) {
             console.error('Error processing activity:', error);
