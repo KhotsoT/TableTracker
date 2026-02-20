@@ -21,7 +21,8 @@ import {
   RefreshCw,
   Plus,
   Home,
-  AlertCircle
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "./ui/dialog";
 import { toast } from "./ui/use-toast";
@@ -595,8 +596,17 @@ function Messages() {
       // Refresh credits after sending messages
       await fetchCredits();
       
+      // Clear any previous errors
+      setError(null);
+      
+      // Show success message with details
       setShowSuccess(true);
       setMessage('');
+      
+      // Clear phone numbers input if in phone numbers mode
+      if (sendMode === 'phoneNumbers') {
+        setPhoneNumbersInput('');
+      }
       
       // Hide success message after 5 seconds
       setTimeout(() => {
@@ -1038,7 +1048,15 @@ function Messages() {
             )}
             {showSuccess && (
               <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-600 text-sm">Message sent successfully!</p>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <div>
+                    <p className="text-green-600 font-medium">Message sent successfully!</p>
+                    <p className="text-green-600 text-xs mt-1">
+                      Sent to {previewRecipients.length} recipient{previewRecipients.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
             <form onSubmit={handleSubmit}>
