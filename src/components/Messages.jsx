@@ -43,6 +43,8 @@ function Messages() {
   const [estimatedCredits, setEstimatedCredits] = useState(0);
   const [grades, setGrades] = useState(['all']);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [sendMode, setSendMode] = useState('grades'); // 'grades' or 'phoneNumbers'
+  const [phoneNumbersInput, setPhoneNumbersInput] = useState('');
   const [inboxMessages, setInboxMessages] = useState([]);
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [credits, setCredits] = useState(0);
@@ -412,6 +414,11 @@ function Messages() {
     });
 
     console.log('Filtered contacts count:', filtered.length);
+    
+    // Reset phone numbers input when switching to grades mode
+    if (sendMode === 'grades') {
+      setPhoneNumbersInput('');
+    }
 
     const recipients = filtered.flatMap(contact => {
       const recipients = [];
@@ -445,7 +452,7 @@ function Messages() {
 
     console.log('Total recipients after filtering:', recipients.length);
     setPreviewRecipients(recipients);
-  }, [contacts, selectedGrade, selectedContact]);
+  }, [contacts, selectedGrade, selectedContact, sendMode, phoneNumbersInput, message]);
 
   // Update the credit calculation function
   const calculateEstimatedCredits = (messageText, recipientCount) => {
@@ -484,7 +491,12 @@ function Messages() {
     }
 
     if (previewRecipients.length === 0) {
-      setError('No recipients selected');
+      if (sendMode === 'phoneNumbers') {
+        setError('Please enter at least one valid phone number');
+      } else {
+        setError('No recipients selected');
+      }
+      setIsLoading(false);
       return;
     }
 
@@ -580,27 +592,33 @@ function Messages() {
       
       // Format all recipients for sending
       const messages = recipients.map(recipient => {
-        // Clean and format the phone number
-        let number = recipient.number.replace(/\s+/g, ''); // Remove spaces
-        
-        // If number starts with '27', replace with '0'
-        if (number.startsWith('27')) {
-          number = '0' + number.slice(2);
-        }
-        
-        // If number starts with '+27', replace with '0'
-        if (number.startsWith('+27')) {
-          number = '0' + number.slice(3);
-        }
-        
-        // Ensure number starts with '0'
-        if (!number.startsWith('0')) {
-          number = '0' + number;
-        }
-        
-        // Convert to international format (27)
-        if (number.startsWith('0')) {
-          number = '27' + number.slice(1);
+        // Use internationalNumber if available (from phone numbers mode), otherwise format the number
+        let number;
+        if (recipient.internationalNumber) {
+          number = recipient.internationalNumber;
+        } else {
+          // Clean and format the phone number (for grade-based recipients)
+          number = recipient.number.replace(/\s+/g, ''); // Remove spaces
+          
+          // If number starts with '27', replace with '0'
+          if (number.startsWith('27')) {
+            number = '0' + number.slice(2);
+          }
+          
+          // If number starts with '+27', replace with '0'
+          if (number.startsWith('+27')) {
+            number = '0' + number.slice(3);
+          }
+          
+          // Ensure number starts with '0'
+          if (!number.startsWith('0')) {
+            number = '0' + number;
+          }
+          
+          // Convert to international format (27)
+          if (number.startsWith('0')) {
+            number = '27' + number.slice(1);
+          }
         }
         
         // Validate the final number format
@@ -927,40 +945,86 @@ function Messages() {
           <Card className="p-8 w-full">
             <h2 className="text-xl font-semibold text-gray-900 mb-8">Compose Message</h2>
             <form onSubmit={handleSubmit}>
-              {/* Top section with dropdowns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Grade</label>
-                  <Select value={selectedGrade} onValueChange={setSelectedGrade}>
-                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                      <SelectValue placeholder="Select Grade" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {grades.map(grade => (
-                        <SelectItem 
-                          key={grade} 
-                          value={grade}
-                          className="cursor-pointer hover:bg-[#646cff] hover:text-white"
-                        >
-                          {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">Send To</label>
-                  <Select value={selectedContact} onValueChange={setSelectedContact}>
-                    <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
-                      <SelectValue placeholder="Select Recipients" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="primary">Primary Contact</SelectItem>
-                      <SelectItem value="both">Both Parents</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Send Mode Toggle */}
+              <div className="mb-6">
+                <label className="text-sm font-medium mb-2 block">Send Mode</label>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setSendMode('grades')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      sendMode === 'grades'
+                        ? 'bg-[#646cff] text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Send to Grades
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSendMode('phoneNumbers')}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      sendMode === 'phoneNumbers'
+                        ? 'bg-[#646cff] text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    Send to Phone Numbers
+                  </button>
                 </div>
               </div>
+
+              {/* Conditional rendering based on send mode */}
+              {sendMode === 'grades' ? (
+                /* Top section with dropdowns for grades */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Grade</label>
+                    <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                      <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                        <SelectValue placeholder="Select Grade" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {grades.map(grade => (
+                          <SelectItem 
+                            key={grade} 
+                            value={grade}
+                            className="cursor-pointer hover:bg-[#646cff] hover:text-white"
+                          >
+                            {grade === 'all' ? 'All Grades' : `Grade ${grade}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Send To</label>
+                    <Select value={selectedContact} onValueChange={setSelectedContact}>
+                      <SelectTrigger className="w-full bg-[#646cff] text-white border-[#535bf2] hover:bg-[#535bf2] focus:ring-0">
+                        <SelectValue placeholder="Select Recipients" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primary">Primary Contact</SelectItem>
+                        <SelectItem value="both">Both Parents</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : (
+                /* Phone numbers input */
+                <div className="mb-8">
+                  <label className="text-sm font-medium mb-2 block">Phone Numbers (comma-separated)</label>
+                  <Textarea
+                    value={phoneNumbersInput}
+                    onChange={(e) => setPhoneNumbersInput(e.target.value)}
+                    placeholder="Enter phone numbers separated by commas, e.g., 0821234567, 0834567890, +27821234567"
+                    className="min-h-[100px] resize-y"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">
+                    Enter phone numbers in any format (0821234567, +27821234567, or 27821234567). Invalid numbers will be filtered out.
+                  </p>
+                </div>
+              )}
 
               {/* Main content area - split into two columns */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
@@ -1004,13 +1068,21 @@ function Messages() {
                       <span className="font-medium">Recipients (<span className="text-blue-600">{previewRecipients.length}</span>)</span>
                     </div>
                     
-                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
-                      <FaGraduationCap className="w-4 h-4" />
-                      <span>
-                        {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
-                        {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
-                      </span>
-                    </div>
+                    {sendMode === 'grades' && (
+                      <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+                        <FaGraduationCap className="w-4 h-4" />
+                        <span>
+                          {selectedGrade === 'all' ? 'All Grades' : `Grade ${selectedGrade}`} • 
+                          {selectedContact === 'both' ? ' Both Parents' : ' Primary Contacts'}
+                        </span>
+                      </div>
+                    )}
+                    {sendMode === 'phoneNumbers' && (
+                      <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
+                        <Users className="w-4 h-4" />
+                        <span>Direct Phone Numbers</span>
+                      </div>
+                    )}
 
                     <div className="max-h-[240px] overflow-y-auto border rounded-lg bg-white">
                       {previewRecipients.map((recipient, index) => (
@@ -1019,7 +1091,11 @@ function Messages() {
                         >
                           <div className="flex flex-col">
                             <span className="font-medium text-gray-900">{recipient.name}</span>
-                            <span className="text-gray-500 text-xs">Grade {recipient.grade} • {recipient.relation}</span>
+                            {sendMode === 'grades' ? (
+                              <span className="text-gray-500 text-xs">Grade {recipient.grade} • {recipient.relation}</span>
+                            ) : (
+                              <span className="text-gray-500 text-xs">Direct Number</span>
+                            )}
                           </div>
                           <span className="text-blue-600 font-medium">{recipient.number}</span>
                         </div>
