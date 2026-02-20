@@ -452,6 +452,10 @@ function Messages() {
 
     console.log('Total recipients after filtering:', recipients.length);
     setPreviewRecipients(recipients);
+    
+    // Calculate credits for grade-based recipients
+    const credits = calculateEstimatedCredits(message, recipients.length);
+    setEstimatedCredits(credits);
   }, [contacts, selectedGrade, selectedContact, sendMode, phoneNumbersInput, message]);
 
   // Update the credit calculation function
