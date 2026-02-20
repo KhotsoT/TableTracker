@@ -180,14 +180,16 @@ function Dashboard() {
         });
 
         // Real-time alerts listener - show both SMS and contact activities (last 5)
+        // Each alert represents ONE send operation (one batch), regardless of recipient count
         const alertsQuery = query(
           alertsRef, 
           orderBy('createdAt', 'desc'), 
-          limit(100)  // Fetch enough to ensure we get recent ones even after deduplication
+          limit(10)  // Fetch last 10 alerts to get 5 unique activities (accounting for potential duplicates)
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
             const activities = [];
+            const seenMessageKeys = new Set(); // Track unique messages to avoid duplicates
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
@@ -215,13 +217,21 @@ function Dashboard() {
               }
               
               if (data.type === 'sms') {
-                // For SMS, use message content as key to group identical messages
-                // This prevents showing 1000 entries when sending 1 message to 1000 recipients
-                const messageKey = data.message || '';
-                const existingActivity = activities.find(a => a.type === 'sms' && a.message === messageKey);
+                // Each alert = one send operation = one activity
+                // Use message content + timestamp to identify unique sends
+                // If same message sent multiple times, show each send as separate activity
+                const messageKey = (data.message || '').trim();
                 
-                if (!existingActivity) {
-                  // Add the most recent occurrence of this message
+                // Only deduplicate if exact same message sent within 1 second (likely duplicate)
+                const isDuplicate = Array.from(seenMessageKeys).some(key => {
+                  const [msg, timestamp] = key.split('|');
+                  return msg === messageKey && Math.abs(parseInt(timestamp) - createdAt.getTime()) < 1000;
+                });
+                
+                if (!isDuplicate) {
+                  const uniqueKey = `${messageKey}|${createdAt.getTime()}`;
+                  seenMessageKeys.add(uniqueKey);
+                  
                   activities.push({
                     id: doc.id,
                     type: 'sms',
@@ -230,15 +240,6 @@ function Dashboard() {
                     time: formatTime(createdAt),
                     createdAt: createdAt
                   });
-                } else {
-                  // If we find a duplicate, keep the one with more recipients or more recent date
-                  if (data.recipients_count > existingActivity.recipients || 
-                      createdAt.getTime() > existingActivity.createdAt.getTime()) {
-                    existingActivity.id = doc.id;
-                    existingActivity.recipients = Math.max(existingActivity.recipients, data.recipients_count || 0);
-                    existingActivity.createdAt = createdAt;
-                    existingActivity.time = formatTime(createdAt);
-                  }
                 }
               } else if (data.type === 'contacts') {
                 // For contact activities, show all of them
@@ -255,6 +256,7 @@ function Dashboard() {
             });
             
             // Sort by date (already sorted by query, but ensure) and take the most recent 5
+            // Each activity represents ONE send operation (one batch)
             const sortedActivities = activities
               .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
               .slice(0, 5);
