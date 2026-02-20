@@ -491,20 +491,15 @@ function Messages() {
     try {
       const result = await sendZoomConnectSMS(previewRecipients, message);
       
-      // Create alert document for the sent SMS - ensure this happens even if there are other errors
-      try {
-        const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
-        await addDoc(alertsRef, {
-          type: 'sms',
-          message: message,
-          recipients_count: previewRecipients.length,
-          createdAt: serverTimestamp(),
-          status: 'sent'
-        });
-      } catch (alertError) {
-        // Log alert creation error but don't fail the entire operation
-        console.error('Failed to create alert (SMS was sent successfully):', alertError);
-      }
+      // Create alert document for the sent SMS - MUST happen for Recent Activity to work
+      const alertsRef = collection(db, 'schools', SCHOOL_ID, 'alerts');
+      await addDoc(alertsRef, {
+        type: 'sms',
+        message: message,
+        recipients_count: previewRecipients.length,
+        createdAt: serverTimestamp(),
+        status: 'sent'
+      });
       
       // Refresh credits after sending messages
       await fetchCredits();

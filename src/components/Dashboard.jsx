@@ -183,7 +183,7 @@ function Dashboard() {
         const alertsQuery = query(
           alertsRef, 
           orderBy('createdAt', 'desc'), 
-          limit(50)  // Fetch more to account for deduplication and ensure we get recent ones
+          limit(100)  // Fetch enough to ensure we get recent ones even after deduplication
         );
         const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
           try {
@@ -191,6 +191,12 @@ function Dashboard() {
             
             snapshot.docs.forEach(doc => {
               const data = doc.data();
+              
+              // Skip if no type
+              if (!data.type) {
+                return;
+              }
+              
               // Handle both Timestamp and Date objects
               let createdAt;
               if (data.createdAt?.toDate) {
@@ -209,20 +215,15 @@ function Dashboard() {
               }
               
               if (data.type === 'sms') {
-                // For SMS, use message content as key to group identical messages
-                const messageKey = data.message || '';
-                const existingActivity = activities.find(a => a.type === 'sms' && a.message === messageKey);
-                
-                if (!existingActivity) {
-                  activities.push({
-                    id: doc.id,
-                    type: 'sms',
-                    message: data.message || '',
-                    recipients: data.recipients_count || 1,
-                    time: formatTime(createdAt),
-                    createdAt: createdAt
-                  });
-                }
+                // For SMS activities - show all unique messages
+                activities.push({
+                  id: doc.id,
+                  type: 'sms',
+                  message: data.message || '',
+                  recipients: data.recipients_count || 0,
+                  time: formatTime(createdAt),
+                  createdAt: createdAt
+                });
               } else if (data.type === 'contacts') {
                 // For contact activities, show all of them
                 activities.push({
