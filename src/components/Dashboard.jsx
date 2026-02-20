@@ -206,6 +206,12 @@ function Dashboard() {
                 return; // Skip alerts without valid timestamps
               }
               
+              // Skip if createdAt is invalid
+              if (isNaN(createdAt.getTime())) {
+                console.warn('Alert has invalid createdAt:', doc.id, data.createdAt);
+                return;
+              }
+              
               console.log('Processing activity:', {
                 id: doc.id,
                 type: data.type,
