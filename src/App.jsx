@@ -49,7 +49,7 @@ function App() {
 
   return (
     <>
-      <Toaster />
+      <Toaster position="top-center" richColors />
       <Router>
         <div className="flex min-h-screen bg-gray-100 overflow-x-hidden">
           {isAuthenticated && <Sidebar onLogout={handleLogout} />}

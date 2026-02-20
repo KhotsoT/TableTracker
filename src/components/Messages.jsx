@@ -571,6 +571,9 @@ function Messages() {
     }
 
     try {
+      // Store recipient count before sending (in case previewRecipients gets cleared)
+      const recipientCount = previewRecipients.length;
+      
       const result = await sendZoomConnectSMS(previewRecipients, message);
       
       // Create alert document for the sent SMS - MUST happen for Recent Activity to work
@@ -580,7 +583,7 @@ function Messages() {
       const alertDoc = {
         type: 'sms',
         message: message.trim(),
-        recipients_count: previewRecipients.length,
+        recipients_count: recipientCount,
         createdAt: serverTimestamp(),
         status: 'sent'
       };
@@ -596,29 +599,25 @@ function Messages() {
       // Refresh credits after sending messages
       await fetchCredits();
       
-      // Clear any previous errors
-      setError(null);
+      // Refresh sent messages list to show the new message
+      await refreshSentMessages();
       
-      // Show success message with details
-      setShowSuccess(true);
+      // Clear form fields
       setMessage('');
+      setError(null);
       
       // Clear phone numbers input if in phone numbers mode
       if (sendMode === 'phoneNumbers') {
         setPhoneNumbersInput('');
       }
       
-      // Refresh sent messages list to show the new message
-      await refreshSentMessages();
-      
-      // Hide success message after 3 seconds, then refresh page to ensure clean state
-      setTimeout(() => {
-        setShowSuccess(false);
-        // Refresh the page after a short delay to ensure everything is reset
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
-      }, 3000);
+      // Show toast notification mid-screen (no page refresh)
+      toast({
+        title: "Message Sent Successfully!",
+        description: `Sent to ${recipientCount} recipient${recipientCount !== 1 ? 's' : ''}`,
+        variant: "default",
+        duration: 5000,
+      });
 
     } catch (error) {
       console.error('Failed to send SMS:', error);
@@ -1051,19 +1050,6 @@ function Messages() {
             {error && (
               <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-red-600 text-sm">{error}</p>
-              </div>
-            )}
-            {showSuccess && (
-              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <div>
-                    <p className="text-green-600 font-medium">Message sent successfully!</p>
-                    <p className="text-green-600 text-xs mt-1">
-                      Sent to {previewRecipients.length} recipient{previewRecipients.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
               </div>
             )}
             <form onSubmit={handleSubmit}>
